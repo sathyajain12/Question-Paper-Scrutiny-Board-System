@@ -8,6 +8,8 @@ export interface Env {
     BOARD_LOCK: DurableObjectNamespace;
 
     // vars
+    /** "true" serves fixtures and enables ?as= role impersonation. Never set in production. */
+    DEV_MODE: string;
     GOOGLE_WORKSPACE_DOMAIN: string;
     SPREADSHEET_ID: string;
     DRIVE_ROOT_FOLDER_ID: string;

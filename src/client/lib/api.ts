@@ -19,8 +19,27 @@ export class ApiError extends Error {
   }
 }
 
+const DEV_USER_STORAGE_KEY = 'qpsb.devUser';
+
+/**
+ * Development affordance: ?as=<email> in the page URL makes every API call
+ * run as that user. It is remembered for the tab, because client-side
+ * navigation drops the query string. The server honours the parameter only
+ * when DEV_MODE is on, so this is inert in production.
+ */
+function withDevUser(path: string): string {
+  const fromUrl = new URLSearchParams(window.location.search).get('as');
+  if (fromUrl) sessionStorage.setItem(DEV_USER_STORAGE_KEY, fromUrl);
+
+  const as = fromUrl ?? sessionStorage.getItem(DEV_USER_STORAGE_KEY);
+  if (!as) return path;
+
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}as=${encodeURIComponent(as)}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`/api${withDevUser(path)}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   });

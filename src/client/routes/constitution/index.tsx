@@ -3,20 +3,39 @@
  *
  * Per board: select 2–3 faculty and submit; view rejection feedback and
  * resubmit; once approved, pick session date(s) + one start time to lock.
- *
- * Components to build here (Phase 2 read-only, Phase 3 writes):
- *   BoardCard · StatusBadge · FacultyPicker · SessionDatePicker
  */
+import { BoardCard } from '@/components/board/BoardCard';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states';
+import { useBoards } from '@/lib/hooks';
+
 export default function ConstitutionPage() {
+  const { data, isPending, error } = useBoards();
+
   return (
     <div>
       <h2 className="text-lg font-bold text-brand-600">QPSB Constitution</h2>
-      <p className="mt-4 rounded border-l-4 border-brand-500 bg-brand-50 p-4 text-sm">
+
+      <p className="mt-3 rounded-md border-l-4 border-brand-500 bg-brand-50 px-4 py-3 text-sm text-slate-700">
         Heads of Departments must not nominate any faculty member who has
         relatives (wards) currently enrolled as students in the same academic
         programme for which the QPSB is being constituted.
       </p>
-      {/* TODO Phase 2: useQuery(queryKeys.boards) → BoardCard list */}
+
+      <div className="mt-6 space-y-4">
+        {isPending && <LoadingState label="Loading your boards…" />}
+        {error && <ErrorState error={error} />}
+
+        {data?.boards.length === 0 && (
+          <EmptyState
+            title="No programmes found"
+            hint="No academic programmes are assigned to your department(s)."
+          />
+        )}
+
+        {data?.boards.map((summary) => (
+          <BoardCard key={summary.boardId} summary={summary} />
+        ))}
+      </div>
     </div>
   );
 }

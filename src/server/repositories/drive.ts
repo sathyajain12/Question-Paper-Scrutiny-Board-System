@@ -1,31 +1,12 @@
 /**
- * The ONLY module that knows files live in Google Drive.
- * Backs the Pre/Post-QPSB check matrices and the ZIP download.
+ * The live Google Drive implementation — the ONLY module that knows files
+ * live in Drive. Backs the Pre/Post-QPSB check matrices and the ZIP download.
+ *
+ * Not yet implemented (Phase 4/5). Development runs on createMockDriveRepo().
  */
-import type { CheckResult, FolderCheck } from '@shared/types';
-import type { CheckType } from '@shared/constants/folder-spec';
+import type { DriveRepo } from './drive-types';
 
-export interface DriveRepo {
-  /** Children of a folder, one files.list call with a tight `fields` mask. */
-  listChildren(folderId: string): Promise<DriveFile[]>;
-
-  /** Fans out across every course in the board, capped concurrency. */
-  runCheck(boardId: string, type: CheckType): Promise<CheckResult>;
-
-  /**
-   * Store-only streamed ZIP (docs §9). Never buffer the archive in memory —
-   * a Worker has ~128 MB and the old base64 approach cannot be ported.
-   */
-  streamArchive(boardId: string): Promise<ReadableStream<Uint8Array>>;
-}
-
-export interface DriveFile {
-  id: string;
-  name: string;
-  mimeType: string;
-  size?: number;
-  webViewLink?: string;
-}
+export type { DriveFile, DriveRepo } from './drive-types';
 
 export const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
@@ -36,13 +17,7 @@ export function buildChildrenQuery(folderId: string): string {
   return `'${folderId}' in parents and trashed = false`;
 }
 
-export const MISSING: FolderCheck = {
-  status: 'missing',
-  fileCount: 0,
-  folderUrl: null,
-};
-
 // TODO Phase 4 (checks) and Phase 5 (archive).
 export function createDriveRepo(_accessToken: string): DriveRepo {
-  throw new Error('createDriveRepo not implemented');
+  throw new Error('createDriveRepo not implemented — Phase 4');
 }

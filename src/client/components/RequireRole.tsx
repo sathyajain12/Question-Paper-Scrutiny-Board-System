@@ -1,5 +1,7 @@
 import { Navigate } from 'react-router';
 import type { Role } from '@shared/types';
+import { useSession } from '@/lib/hooks';
+import { LoadingState } from './ui/states';
 
 /**
  * Client-side route gate. Convenience only — the Worker enforces the same
@@ -12,10 +14,10 @@ export function RequireRole({
   roles: Role[];
   children: React.ReactNode;
 }) {
-  // TODO Phase 1: const { data: user, isPending } = useSession();
-  void roles;
-  const user: { role: Role } | null = null;
+  const { data: user, isPending } = useSession();
 
-  if (!user) return <Navigate to="/" replace />;
+  if (isPending) return <LoadingState label="Checking access…" />;
+  if (!user || !roles.includes(user.role)) return <Navigate to="/" replace />;
+
   return <>{children}</>;
 }

@@ -7,6 +7,8 @@
 import { Navigate, Route, Routes } from 'react-router';
 import { AppLayout } from './components/AppLayout';
 import { RequireRole } from './components/RequireRole';
+import { LoadingState } from './components/ui/states';
+import { useSession } from './lib/hooks';
 import ConstitutionPage from './routes/constitution';
 import FileCheckerPage from './routes/file-checker';
 import AdminPage from './routes/admin';
@@ -20,7 +22,7 @@ export default function App() {
         <Route
           path="constitution"
           element={
-            <RequireRole roles={['hod']}>
+            <RequireRole roles={['hod', 'viewer']}>
               <ConstitutionPage />
             </RequireRole>
           }
@@ -43,8 +45,12 @@ export default function App() {
   );
 }
 
-/** Admin → /admin, HoD → /constitution. Replaces the old switchTab() default. */
+/** Replaces the old switchTab() default-landing behaviour. */
 function HomeRedirect() {
-  // TODO Phase 1: read useSession() and redirect by role.
-  return <Navigate to="/constitution" replace />;
+  const { data: user, isPending } = useSession();
+
+  if (isPending) return <LoadingState label="Signing in…" />;
+  if (!user) return <LoadingState label="Redirecting to sign in…" />;
+
+  return <Navigate to={user.role === 'admin' ? '/admin' : '/constitution'} replace />;
 }

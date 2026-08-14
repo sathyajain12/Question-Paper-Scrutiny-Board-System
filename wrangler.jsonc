@@ -27,6 +27,9 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BoardLock"] }],
 
   "vars": {
+    // Serves in-memory fixtures and enables ?as= role switching.
+    // MUST be "false" before the first production deploy.
+    "DEV_MODE": "true",
     "GOOGLE_WORKSPACE_DOMAIN": "sssihl.edu.in",
     "SPREADSHEET_ID": "TODO",
     "DRIVE_ROOT_FOLDER_ID": "TODO"

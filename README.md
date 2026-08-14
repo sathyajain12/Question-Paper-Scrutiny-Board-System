@@ -65,9 +65,34 @@ D1 read-model escape hatch (§14) cheap to add later.
 
 ## Status
 
-Skeleton only — config, types, the board state machine, and the validation
-schemas are real; routes and components are stubs that throw or render
-placeholders. Build order is in
+All three screens are built and working against **in-memory fixtures**
+(`DEV_MODE: "true"` in `wrangler.jsonc`), which enforce the same rules the
+live repository will: the state machine, version checks, and role/department
+scoping.
+
+| Area | State |
+|---|---|
+| QPSB Constitution (HoD) | Built — submit, rejection feedback, resubmit, schedule |
+| Admin Portal | Built — counts, filters, approve, reject, offer dates |
+| File Checker | Built — pre/post matrices with problem filter |
+| Google Sheets / Drive | **Not implemented** — `createSheetsRepo` / `createDriveRepo` throw |
+| Google login | **Not implemented** — dev impersonation only |
+| ZIP download, appointment email | **Not implemented** (Phases 5) |
+
+### Development sign-in
+
+There is no Google login yet. Append `?as=<email>` to any URL to act as that
+user; it is remembered for the browser tab. Valid users are in
+`src/server/repositories/fixtures.ts`:
+
+- `coe@sssihl.edu.in` — administrator
+- `hod.maths@sssihl.edu.in` — HoD, Mathematics
+- `hod.cs@sssihl.edu.in` — HoD, Computer Science + Physics
+
+This works only while `DEV_MODE` is `"true"`. **Set it to `"false"` before any
+production deploy.**
+
+Build order for the rest is in
 [docs/ARCHITECTURE.md §12](docs/ARCHITECTURE.md).
 
 ## Commands
