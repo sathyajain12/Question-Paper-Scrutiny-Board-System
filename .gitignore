@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.wrangler/
+*.local
+
+# Secrets — never commit
+.dev.vars
+.env
+*.pem
+service-account*.json
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Logs
+npm-debug.log*
+*.log

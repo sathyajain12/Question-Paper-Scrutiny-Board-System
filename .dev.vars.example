@@ -1,0 +1,17 @@
+# Copy to .dev.vars for local `vite dev` / `wrangler dev`.
+# .dev.vars is gitignored — never commit real values.
+# In production these are set with: wrangler secret put NAME
+
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+
+# Service account that has read/write on the spreadsheet and the Drive root.
+GOOGLE_SA_EMAIL=qpsb-portal@your-project.iam.gserviceaccount.com
+# Full PEM, newlines escaped as \n
+GOOGLE_SA_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+# Random 32+ byte string: openssl rand -base64 48
+SESSION_SIGNING_KEY=
+
+# Appointment emails
+RESEND_API_KEY=

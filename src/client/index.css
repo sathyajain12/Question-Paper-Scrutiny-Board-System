@@ -1,0 +1,31 @@
+@import 'tailwindcss';
+
+/**
+ * SSSIHL identity, carried over from the Apps Script portal.
+ * Tailwind v4 reads design tokens straight from @theme.
+ */
+@theme {
+  --color-brand-50: #eff5fb;
+  --color-brand-100: #d6e5f4;
+  --color-brand-500: #1a6bb8;
+  --color-brand-600: #0c5196; /* the original --headingFont */
+  --color-brand-700: #0a3d6e;
+
+  /* Board status palette. Every use must pair colour with an icon and text —
+     colour alone fails colour-blind users (docs §11 item 8). */
+  --color-status-success: #16a34a;
+  --color-status-warning: #d97706;
+  --color-status-danger: #dc2626;
+  --color-status-info: #1e40af;
+  --color-status-neutral: #6b7280;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-slate-800 antialiased;
+}

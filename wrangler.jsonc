@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "qpsb-portal",
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Static assets (public/ + built client) are served straight from the edge.
+  // This is what serves /logo.png — no Worker CPU, no API call.
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+
+  "observability": { "enabled": true },
+
+  // Catalogue cache + cached service-account access token. See docs/ARCHITECTURE.md §8.
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "TODO_CREATE_WITH_wrangler_kv_namespace_create_CACHE" }
+  ],
+
+  // One instance per boardId serialises writes to Sheets. See §7.
+  "durable_objects": {
+    "bindings": [{ "name": "BOARD_LOCK", "class_name": "BoardLock" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BoardLock"] }],
+
+  "vars": {
+    "GOOGLE_WORKSPACE_DOMAIN": "sssihl.edu.in",
+    "SPREADSHEET_ID": "TODO",
+    "DRIVE_ROOT_FOLDER_ID": "TODO"
+  }
+
+  // Secrets (never here — use `wrangler secret put NAME`):
+  //   GOOGLE_OAUTH_CLIENT_ID
+  //   GOOGLE_OAUTH_CLIENT_SECRET
+  //   GOOGLE_SA_EMAIL
+  //   GOOGLE_SA_PRIVATE_KEY
+  //   SESSION_SIGNING_KEY
+  //   RESEND_API_KEY
+}
