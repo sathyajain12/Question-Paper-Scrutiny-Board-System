@@ -14,19 +14,29 @@ import type {
   BoardSummary,
   DashboardCounts,
   FacultyMember,
+  FacultyOverride,
   SessionUser,
 } from '@shared/types';
-import { VersionConflictError } from '../middleware/error';
-import { FIXTURE_ACCESS, FIXTURE_BOARDS, FIXTURE_FACULTY } from './fixtures';
-import type { AuditEntry, BoardRepo } from './types';
+import { ConflictError, VersionConflictError } from '../middleware/error';
+import {
+  FIXTURE_ACCESS,
+  FIXTURE_BOARDS,
+  FIXTURE_FACULTY,
+  FIXTURE_FACULTY_OVERRIDES,
+} from './fixtures';
+import type { AuditEntry, BoardRepo, SaveFacultyOverrideInput } from './types';
 
 // Deep clone so mutations don't leak back into the fixture module.
 let boards: BoardDetail[] = structuredClone(FIXTURE_BOARDS);
+let facultyOverrides: FacultyOverride[] = structuredClone(
+  FIXTURE_FACULTY_OVERRIDES,
+);
 const auditLog: AuditEntry[] = [];
 
 /** Test hook — restores fixtures between runs. */
 export function resetMockData(): void {
   boards = structuredClone(FIXTURE_BOARDS);
+  facultyOverrides = structuredClone(FIXTURE_FACULTY_OVERRIDES);
   auditLog.length = 0;
 }
 
@@ -48,6 +58,61 @@ function mustFind(boardId: string): BoardDetail {
 
 function checkVersion(board: BoardDetail, expected: number): void {
   if (board.version !== expected) throw new VersionConflictError();
+}
+
+const sameEmail = (a: string, b: string) =>
+  a.toLowerCase() === b.toLowerCase();
+
+function baseFacultyFor(department: string): FacultyMember[] {
+  return FIXTURE_FACULTY.filter((f) => f.department === department);
+}
+
+function overridesFor(department: string): FacultyOverride[] {
+  return facultyOverrides.filter((o) => o.department === department);
+}
+
+/**
+ * The faculty a HoD may actually nominate. Applied on every read so the
+ * picker, the submit validation and the admin preview cannot disagree.
+ */
+function effectiveFacultyFor(department: string): FacultyMember[] {
+  const scoped = overridesFor(department);
+  const excluded = new Set(
+    scoped.filter((o) => o.action === 'exclude').map((o) => o.email.toLowerCase()),
+  );
+
+  const added: FacultyMember[] = scoped
+    .filter((o) => o.action === 'add')
+    .map((o) => ({
+      email: o.email,
+      name: o.name,
+      campus: o.campus,
+      department: o.department,
+    }));
+
+  return [
+    ...baseFacultyFor(department).filter(
+      (f) => !excluded.has(f.email.toLowerCase()),
+    ),
+    ...added,
+  ].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Department-scoped audit entry — no board is involved (see AuditEntry). */
+function recordOverride(
+  actor: SessionUser,
+  action: string,
+  before: FacultyOverride | null,
+  after: FacultyOverride | null,
+): void {
+  auditLog.push({
+    timestamp: new Date().toISOString(),
+    actorEmail: actor.email,
+    action,
+    boardId: '',
+    beforeJson: JSON.stringify(before),
+    afterJson: JSON.stringify(after),
+  });
 }
 
 function record(board: BoardDetail, actor: SessionUser, action: string, before: BoardDetail): void {
@@ -93,9 +158,90 @@ export function createMockRepo(): BoardRepo {
     },
 
     async listFaculty(department) {
-      return FIXTURE_FACULTY.filter(
-        (f) => f.department === department,
-      ) as FacultyMember[];
+      return effectiveFacultyFor(department);
+    },
+
+    async listBaseFaculty(department) {
+      return baseFacultyFor(department);
+    },
+
+    async listFacultyOverrides(department) {
+      return overridesFor(department).sort((a, b) =>
+        a.name.localeCompare(b.name),
+      );
+    },
+
+    async listDepartments() {
+      return [
+        ...new Set([
+          ...FIXTURE_FACULTY.map((f) => f.department),
+          ...facultyOverrides.map((o) => o.department),
+        ]),
+      ].sort();
+    },
+
+    async findCampus({ name, email }) {
+      const match = FIXTURE_FACULTY.find(
+        (f) =>
+          (email && sameEmail(f.email, email)) ||
+          (name && f.name.toLowerCase() === name.trim().toLowerCase()),
+      );
+      // Fall back to an existing override, so re-adding someone the admin
+      // already added elsewhere still fills the campus in.
+      const fromOverride = facultyOverrides.find(
+        (o) =>
+          (email && sameEmail(o.email, email)) ||
+          (name && o.name.toLowerCase() === name.trim().toLowerCase()),
+      );
+      return match?.campus ?? fromOverride?.campus ?? null;
+    },
+
+    async saveFacultyOverride(input: SaveFacultyOverrideInput, actor) {
+      const inBaseList = baseFacultyFor(input.department).some((f) =>
+        sameEmail(f.email, input.email),
+      );
+
+      if (input.action === 'exclude' && !inBaseList) {
+        throw new ConflictError(
+          `${input.name} has no Faculty record in ${input.department} — remove the “add” override instead of excluding them.`,
+        );
+      }
+
+      if (input.action === 'add' && inBaseList) {
+        throw new ConflictError(
+          `${input.name} already appears in ${input.department}. Nothing to add.`,
+        );
+      }
+
+      const existingIndex = facultyOverrides.findIndex(
+        (o) => o.department === input.department && sameEmail(o.email, input.email),
+      );
+      const before =
+        existingIndex >= 0 ? structuredClone(facultyOverrides[existingIndex]!) : null;
+
+      const saved: FacultyOverride = {
+        ...input,
+        email: input.email.toLowerCase(),
+        createdBy: actor.email,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Upsert: one override per person per department.
+      if (existingIndex >= 0) facultyOverrides[existingIndex] = saved;
+      else facultyOverrides.push(saved);
+
+      recordOverride(actor, 'saveFacultyOverride', before, saved);
+      return saved;
+    },
+
+    async deleteFacultyOverride(department, email, actor) {
+      const index = facultyOverrides.findIndex(
+        (o) => o.department === department && sameEmail(o.email, email),
+      );
+      if (index < 0) return; // Idempotent.
+
+      const [removed] = facultyOverrides.splice(index, 1);
+      recordOverride(actor, 'deleteFacultyOverride', removed ?? null, null);
     },
 
     async submitConstitution(boardId, actor, facultyEmails, expectedVersion) {
@@ -104,9 +250,18 @@ export function createMockRepo(): BoardRepo {
       const before = structuredClone(board);
 
       board.status = assertTransition('submitConstitution', board.status, actor.role);
+
+      // Resolved against the department's *effective* list, so an excluded
+      // faculty member cannot be nominated by a crafted request — and an
+      // admin-added one can.
+      const selectable = effectiveFacultyFor(board.department);
       board.members = facultyEmails.map((email) => {
-        const f = FIXTURE_FACULTY.find((x) => x.email === email);
-        if (!f) throw new Error(`Unknown faculty: ${email}`);
+        const f = selectable.find((x) => sameEmail(x.email, email));
+        if (!f) {
+          throw new ConflictError(
+            `${email} is not available for nomination in ${board.department}.`,
+          );
+        }
         return f;
       });
       board.chairperson =

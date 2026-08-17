@@ -88,6 +88,7 @@ The current sheets almost certainly stash lists inside single cells (`availableD
 | `Programmes` | `degree`, `degreeShort`, `department`, `programme`, `driveFolderId` | The catalogue the cascading dropdowns read |
 | `Courses` | `courseCode`, `courseTitle`, `degree`, `department`, `programme`, `semester`, `driveFolderId` | |
 | `Faculty` | `email`, `name`, `campus`, `department`, `isActive` | |
+| `FacultyOverrides` | `department`, `email`, `name`, `campus`, `action` (`exclude`\|`add`), `createdBy`, `createdAt` | Admin adjustments to a department's nomination list — visiting staff, ward conflicts, faculty with no `Faculty` row. One row per person per department (upsert, not append) |
 | `Boards` | `boardId`, `degree`, `department`, `programme`, `status`, `chairpersonEmail`, `submittedBy`, `submittedAt`, `actionBy`, `actionAt`, `rejectionReason`, `sessionTime`, `version`, `updatedAt` | `boardId` = stable slug, e.g. `mtech-cs-2026` |
 | `BoardMembers` | `boardId`, `facultyEmail`, `role` (`chair`\|`member`) | Replaces the CSV-in-a-cell |
 | `BoardDates` | `boardId`, `date`, `offeredBy`, `isSelected` | Replaces `availableDates` / `selectedDate` strings |
@@ -164,6 +165,12 @@ POST   /api/boards/:boardId/appointment-email → { }                           
 GET    /api/catalog/degrees
 GET    /api/catalog/departments?degree=
 GET    /api/catalog/programmes?degree=&department=
+
+GET    /api/faculty/departments                → every department with faculty  [admin]
+GET    /api/faculty/campus?name=&email=        → campus autofill                [admin]
+GET    /api/faculty/overrides?department=      → department snapshot            [admin]
+POST   /api/faculty/overrides                  → { department, email, name, campus, action }  [admin]
+DELETE /api/faculty/overrides?department=&email=                                [admin]
 
 GET    /api/checks/pre?boardId=               → per-course folder matrix
 GET    /api/checks/post?boardId=              → per-course subfolder matrix

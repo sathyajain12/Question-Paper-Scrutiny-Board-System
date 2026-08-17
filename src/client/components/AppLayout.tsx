@@ -17,6 +17,7 @@ interface NavEntry {
 
 const NAV: NavEntry[] = [
   { to: '/admin', label: 'Admin Portal', roles: ['admin'] },
+  { to: '/faculty', label: 'Faculty Overrides', roles: ['admin'] },
   { to: '/constitution', label: 'QPSB Constitution', roles: ['hod', 'viewer'] },
   { to: '/checker', label: 'File Checker', roles: ['admin', 'hod', 'viewer'] },
 ];
@@ -40,9 +41,6 @@ export function AppLayout() {
               e.currentTarget.style.display = 'none';
             }}
           />
-          <h1 className="text-center text-lg font-bold text-brand-600 sm:text-xl">
-            Question Paper Scrutiny Board
-          </h1>
         </div>
 
         {user && (

@@ -13,6 +13,7 @@ import authRoutes from './routes/auth';
 import meRoutes from './routes/me';
 import boardRoutes from './routes/boards';
 import catalogRoutes from './routes/catalog';
+import facultyRoutes from './routes/faculty';
 import checkRoutes from './routes/checks';
 import downloadRoutes from './routes/downloads';
 
@@ -29,6 +30,7 @@ app.use('/api/*', requireSession);
 app.route('/api/me', meRoutes);
 app.route('/api/boards', boardRoutes);
 app.route('/api/catalog', catalogRoutes);
+app.route('/api/faculty', facultyRoutes);
 app.route('/api/checks', checkRoutes);
 app.route('/api/downloads', downloadRoutes);
 

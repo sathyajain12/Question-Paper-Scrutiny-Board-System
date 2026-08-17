@@ -27,6 +27,24 @@ export interface FacultyMember {
   department: string;
 }
 
+/**
+ * An admin adjustment to the faculty list a HoD picks from, scoped to one
+ * department. `exclude` hides a Faculty-tab row (visiting staff, ward
+ * conflicts); `add` surfaces someone who has no Faculty-tab row at all.
+ */
+export type FacultyOverrideAction = 'exclude' | 'add';
+
+export interface FacultyOverride {
+  department: string;
+  /** Lower-cased — the identity of an override within a department. */
+  email: string;
+  name: string;
+  campus: string;
+  action: FacultyOverrideAction;
+  createdBy: string;
+  createdAt: string;
+}
+
 export interface Course {
   courseCode: string;
   courseTitle: string;

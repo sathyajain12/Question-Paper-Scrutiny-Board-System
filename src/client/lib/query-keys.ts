@@ -5,7 +5,13 @@ export const queryKeys = {
   me: ['me'] as const,
   boards: ['boards'] as const,
   board: (boardId: string) => ['boards', boardId] as const,
-  faculty: (department: string) => ['faculty', department] as const,
+  faculty: {
+    departments: ['faculty', 'departments'] as const,
+    overrides: (department: string) =>
+      ['faculty', 'overrides', department] as const,
+    campus: (name: string, email: string) =>
+      ['faculty', 'campus', name, email] as const,
+  },
   check: (boardId: string, type: CheckType) => ['check', boardId, type] as const,
   catalog: {
     degrees: ['catalog', 'degrees'] as const,

@@ -3,7 +3,11 @@
  * is built against realistic data. Replaced wholesale by the live repository;
  * nothing outside repositories/ imports this.
  */
-import type { BoardDetail, FacultyMember } from '@shared/types';
+import type {
+  BoardDetail,
+  FacultyMember,
+  FacultyOverride,
+} from '@shared/types';
 
 export const FIXTURE_FACULTY: FacultyMember[] = [
   { email: 'r.krishnan@sssihl.edu.in', name: 'Dr. R. Krishnan', campus: 'Prasanthi Nilayam', department: 'Mathematics' },
@@ -186,6 +190,32 @@ export const FIXTURE_BOARDS: BoardDetail[] = [
     actionAt: '2026-07-30T12:00:00Z',
     rejectionReason: null,
     version: 8,
+  },
+];
+
+/**
+ * One of each override kind, on the Mathematics board that starts in
+ * NotSubmitted — so the effect on the HoD's picker is visible in development
+ * without configuring anything first.
+ */
+export const FIXTURE_FACULTY_OVERRIDES: FacultyOverride[] = [
+  {
+    department: 'Mathematics',
+    email: 'p.lakshmi@sssihl.edu.in',
+    name: 'Dr. P. Lakshmi',
+    campus: 'Anantapur',
+    action: 'exclude',
+    createdBy: 'coe@sssihl.edu.in',
+    createdAt: '2026-08-11T06:20:00Z',
+  },
+  {
+    department: 'Mathematics',
+    email: 's.anantharaman@sssihl.edu.in',
+    name: 'Dr. S. Anantharaman',
+    campus: 'Prasanthi Nilayam',
+    action: 'add',
+    createdBy: 'coe@sssihl.edu.in',
+    createdAt: '2026-08-12T04:45:00Z',
   },
 ];
 

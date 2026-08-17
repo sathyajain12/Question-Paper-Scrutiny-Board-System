@@ -21,6 +21,10 @@ export const errorHandler: ErrorHandler<Env> = (err, c) => {
     );
   }
 
+  if (err instanceof ConflictError) {
+    return c.json({ error: err.message, code: 'CONFLICT' }, 409);
+  }
+
   if (err instanceof VersionConflictError) {
     return c.json(
       { error: 'This board was updated by someone else.', code: 'VERSION_CONFLICT' },
@@ -31,6 +35,18 @@ export const errorHandler: ErrorHandler<Env> = (err, c) => {
   console.error('Unhandled error', err);
   return c.json({ error: 'Internal server error' }, 500);
 };
+
+/**
+ * A request that is well-formed but conflicts with the current data — e.g.
+ * adding a faculty member who already has a Faculty row for that department.
+ * Carries a message meant for the user, unlike the generic 500 path.
+ */
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConflictError';
+  }
+}
 
 /** Thrown by BoardLock when the client's `version` is stale (§7). */
 export class VersionConflictError extends Error {

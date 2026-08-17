@@ -13,9 +13,16 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 
-  /** True when someone else changed the board first (§7). */
-  get isConflict() {
-    return this.status === 409;
+  /**
+   * True only for the stale-`version` case (§7) — the one conflict where the
+   * refetch has already fixed things and a canned message is right.
+   *
+   * Other 409s (an illegal state transition, adding faculty who already
+   * exist) carry a message written for the user, so they must not be
+   * collapsed into "someone else changed this".
+   */
+  get isVersionConflict() {
+    return this.code === 'VERSION_CONFLICT';
   }
 }
 
@@ -64,4 +71,5 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) }),
+  del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };

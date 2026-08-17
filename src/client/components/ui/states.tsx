@@ -24,12 +24,15 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
 }
 
 /**
- * A 409 is not really an error — someone else edited the board first, and the
- * refetch has already loaded the current state. Say that, rather than
- * showing a raw failure.
+ * A stale-version conflict is not really an error — someone else edited the
+ * board first, and the refetch has already loaded the current state. Say that,
+ * rather than showing a raw failure.
+ *
+ * Every other error, including other 409s, shows the server's own message:
+ * those are written for the user and are more useful than any substitute.
  */
 export function ErrorState({ error }: { error: unknown }) {
-  const isConflict = error instanceof ApiError && error.isConflict;
+  const isConflict = error instanceof ApiError && error.isVersionConflict;
 
   const message = isConflict
     ? 'This board was updated by someone else. The latest version has been loaded — please review and try again.'
