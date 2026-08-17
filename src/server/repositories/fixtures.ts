@@ -10,11 +10,11 @@ import type {
 } from '@shared/types';
 
 export const FIXTURE_FACULTY: FacultyMember[] = [
-  { email: 'r.krishnan@sssihl.edu.in', name: 'Dr. R. Krishnan', campus: 'Prasanthi Nilayam', department: 'Mathematics' },
-  { email: 's.venkataraman@sssihl.edu.in', name: 'Dr. S. Venkataraman', campus: 'Prasanthi Nilayam', department: 'Mathematics' },
-  { email: 'a.narayan@sssihl.edu.in', name: 'Dr. A. Narayan', campus: 'Brindavan', department: 'Mathematics' },
-  { email: 'p.lakshmi@sssihl.edu.in', name: 'Dr. P. Lakshmi', campus: 'Anantapur', department: 'Mathematics' },
-  { email: 'k.subramanian@sssihl.edu.in', name: 'Dr. K. Subramanian', campus: 'Prasanthi Nilayam', department: 'Mathematics' },
+  { email: 'abc@sssihl.edu.in', name: 'Dr. R. Krishnan', campus: 'Prasanthi Nilayam', department: 'Mathematics' },
+  { email: 'dbc@sssihl.edu.in', name: 'Dr. S. Venkataraman', campus: 'Prasanthi Nilayam', department: 'Mathematics' },
+  { email: 'sce@sssihl.edu.in', name: 'Dr. A. Narayan', campus: 'Brindavan', department: 'Mathematics' },
+  { email: 'fdc@sssihl.edu.in', name: 'Dr. P. Lakshmi', campus: 'Anantapur', department: 'Mathematics' },
+  { email: 'qqn@sssihl.edu.in', name: 'Dr. K. Subramanian', campus: 'Prasanthi Nilayam', department: 'Mathematics' },
 
   { email: 'v.ramesh@sssihl.edu.in', name: 'Dr. V. Ramesh', campus: 'Prasanthi Nilayam', department: 'Physics' },
   { email: 'g.mohan@sssihl.edu.in', name: 'Dr. G. Mohan', campus: 'Prasanthi Nilayam', department: 'Physics' },
