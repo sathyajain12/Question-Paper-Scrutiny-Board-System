@@ -160,12 +160,12 @@ describe('faculty overrides', () => {
     const effective = await repo.listFaculty('Mathematics');
     const emails = effective.map((f) => f.email);
 
-    expect(emails).not.toContain('p.lakshmi@sssihl.edu.in'); // excluded
-    expect(emails).toContain('s.anantharaman@sssihl.edu.in'); // added
+    expect(emails).not.toContain('math4@sssihl.edu.in'); // excluded
+    expect(emails).toContain('math6@sssihl.edu.in'); // added
   });
 
   it('fills the campus in from an existing record', async () => {
-    expect(await repo.findCampus({ email: 'g.mohan@sssihl.edu.in' })).toBe(
+    expect(await repo.findCampus({ email: 'phy2@sssihl.edu.in' })).toBe(
       'Prasanthi Nilayam',
     );
     expect(await repo.findCampus({ name: 'Dr. N. Sridevi' })).toBe('Anantapur');
@@ -179,5 +179,64 @@ describe('faculty overrides', () => {
       'Mathematics',
       'Physics',
     ]);
+  });
+
+  it('persists an optional reason, and stores null when none is given', async () => {
+    const [first, second] = await repo.listBaseFaculty(DEPT);
+
+    await repo.saveFacultyOverride(
+      { ...first!, action: 'exclude', reason: 'Ward enrolled this cycle.' },
+      admin,
+    );
+    await repo.saveFacultyOverride({ ...second!, action: 'exclude' }, admin);
+
+    const overrides = await repo.listFacultyOverrides(DEPT);
+    expect(overrides.find((o) => o.email === first!.email)?.reason).toBe(
+      'Ward enrolled this cycle.',
+    );
+    expect(overrides.find((o) => o.email === second!.email)?.reason).toBeNull();
+  });
+
+  it('finds a member currently nominated on a non-NotSubmitted board', async () => {
+    const nominations = await repo.findActiveNominations(
+      'Computer Science',
+      'cs2@sssihl.edu.in',
+    );
+    expect(nominations).toEqual([
+      expect.objectContaining({
+        boardId: 'mtech-computer-science-2026',
+        status: 'Approved',
+      }),
+    ]);
+  });
+
+  it('finds no active nominations for someone not on any board', async () => {
+    expect(await repo.findActiveNominations('Physics', 'phy1@sssihl.edu.in')).toEqual([]);
+  });
+
+  it('records both an added and a later-removed override in the audit log, most recent first', async () => {
+    const [first] = await repo.listBaseFaculty(DEPT);
+
+    await repo.saveFacultyOverride(
+      { ...first!, action: 'exclude', reason: 'Visiting, on leave.' },
+      admin,
+    );
+    await repo.deleteFacultyOverride(DEPT, first!.email, admin);
+
+    const history = await repo.listFacultyAuditLog(DEPT);
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ changeType: 'removed', email: first!.email });
+    expect(history[1]).toMatchObject({
+      changeType: 'added',
+      email: first!.email,
+      reason: 'Visiting, on leave.',
+    });
+  });
+
+  it('excludes other departments from a department’s audit log', async () => {
+    const [physicsFaculty] = await repo.listBaseFaculty(DEPT);
+    await repo.saveFacultyOverride({ ...physicsFaculty!, action: 'exclude' }, admin);
+
+    expect(await repo.listFacultyAuditLog('Chemistry')).toEqual([]);
   });
 });

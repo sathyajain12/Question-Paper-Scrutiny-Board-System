@@ -12,7 +12,10 @@ export type BoardAction =
   | 'approve'
   | 'reject'
   | 'offerDates'
-  | 'confirmSchedule';
+  | 'confirmSchedule'
+  | 'requestChanges'
+  | 'acknowledgeChanges'
+  | 'closeBoard';
 
 interface Transition {
   from: BoardStatus[];
@@ -48,6 +51,25 @@ export const TRANSITIONS: Record<BoardAction, Transition> = {
     from: ['Approved'],
     to: 'Locked',
     allowedRoles: ['hod'],
+  },
+  // Post-QPSB file corrections: status stays Locked, only the flag flips —
+  // mirrors offerDates staying within Approved.
+  requestChanges: {
+    from: ['Locked'],
+    to: 'Locked',
+    allowedRoles: ['admin'],
+  },
+  acknowledgeChanges: {
+    from: ['Locked'],
+    to: 'Locked',
+    allowedRoles: ['hod'],
+  },
+  // Revokes Drive access once the QPSB session is done. Only Locked boards
+  // reach here, and the repository additionally rejects a second close.
+  closeBoard: {
+    from: ['Locked'],
+    to: 'Locked',
+    allowedRoles: ['admin'],
   },
 };
 

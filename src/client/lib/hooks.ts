@@ -4,10 +4,12 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  ActiveNomination,
   BoardDetail,
   BoardSummary,
   CheckResult,
   DashboardCounts,
+  FacultyAuditRow,
   FacultyMember,
   FacultyOverride,
   SessionUser,
@@ -141,6 +143,32 @@ export const useSaveFacultyOverride = () =>
     api.post<FacultyOverridesResponse>('/faculty/overrides', input),
   );
 
+/**
+ * A department's override history, including overrides later removed —
+ * fetched only once the History panel is actually opened (`enabled`), since
+ * most admin visits never need it.
+ */
+export function useFacultyAuditLog(department: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.faculty.audit(department ?? ''),
+    queryFn: () =>
+      api.get<{ history: FacultyAuditRow[] }>(
+        `/faculty/audit?department=${encodeURIComponent(department!)}`,
+      ),
+    enabled: Boolean(department) && enabled,
+  });
+}
+
+/**
+ * Heads-up check fired right when an admin clicks Exclude — not an eager
+ * per-row query, since most faculty are never mid-exclude at once.
+ */
+export function checkActiveNominations(department: string, email: string) {
+  return api.get<{ nominations: ActiveNomination[] }>(
+    `/faculty/nominations?department=${encodeURIComponent(department)}&email=${encodeURIComponent(email)}`,
+  );
+}
+
 export const useDeleteFacultyOverride = () =>
   useOverrideMutation((input: { department: string; email: string }) =>
     api.del<FacultyOverridesResponse>(
@@ -189,3 +217,29 @@ export const useConfirmSchedule = (boardId: string) =>
     boardId,
     'schedule',
   );
+
+export function useNotifyAdmin(boardId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ success: boolean; message: string }>(`/boards/${boardId}/notify-admin`),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.board(boardId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.boards });
+    },
+  });
+}
+
+/** Admin: flag the post-QPSB files for correction (board must be Locked). */
+export const useRequestChanges = (boardId: string) =>
+  useBoardMutation<{ version: number }>(boardId, 'request-changes');
+
+/** HoD: confirm the flagged corrections are done, notifying admin. */
+export const useAcknowledgeChanges = (boardId: string) =>
+  useBoardMutation<{ version: number }>(boardId, 'changes-incorporated');
+
+/** Admin: close the board after the QPSB session — revokes Drive access. Irreversible. */
+export const useCloseBoard = (boardId: string) =>
+  useBoardMutation<{ version: number }>(boardId, 'close');
+

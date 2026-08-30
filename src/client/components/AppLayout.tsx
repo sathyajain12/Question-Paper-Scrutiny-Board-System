@@ -7,6 +7,7 @@
 import { NavLink, Outlet } from 'react-router';
 import type { Role } from '@shared/types';
 import { useSession } from '@/lib/hooks';
+import { HelpChatWidget } from './help-chat/HelpChatWidget';
 import { LoadingState } from './ui/states';
 
 interface NavEntry {
@@ -78,6 +79,8 @@ export function AppLayout() {
       <main className="mx-auto max-w-7xl px-4 py-6">
         {isPending ? <LoadingState label="Checking access…" /> : <Outlet />}
       </main>
+
+      {user?.role === 'hod' && <HelpChatWidget />}
     </div>
   );
 }

@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import type { BoardDetail } from '@shared/types';
-import { useApproveBoard, useOfferDates, useRejectBoard } from '@/lib/hooks';
+import {
+  useApproveBoard,
+  useOfferDates,
+  useRejectBoard,
+  useRequestChanges,
+} from '@/lib/hooks';
 import { Button } from '../ui/Button';
 import { ErrorState } from '../ui/states';
 
@@ -15,14 +20,38 @@ export function BoardActions({ board }: { board: BoardDetail }) {
     case 'Approved':
       return <OfferDates board={board} />;
     case 'Locked':
-      return (
-        <Button variant="secondary" disabled title="Appointment emails land in Phase 5">
-          Send appointment email
-        </Button>
-      );
+      return <LockedActions board={board} />;
     default:
       return <span className="text-sm text-slate-400">—</span>;
   }
+}
+
+function LockedActions({ board }: { board: BoardDetail }) {
+  const requestChanges = useRequestChanges(board.boardId);
+
+  return (
+    <div className="space-y-2">
+      {requestChanges.error && <ErrorState error={requestChanges.error} />}
+
+      <Button variant="secondary" disabled title="Appointment emails land in Phase 5">
+        Send appointment email
+      </Button>
+
+      {board.changesRequested ? (
+        <p className="text-xs font-semibold text-amber-600">
+          Changes requested — awaiting the HoD.
+        </p>
+      ) : (
+        <Button
+          variant="secondary"
+          loading={requestChanges.isPending}
+          onClick={() => requestChanges.mutate({ version: board.version })}
+        >
+          Notify HoD — changes required
+        </Button>
+      )}
+    </div>
+  );
 }
 
 function ApproveOrReject({ board }: { board: BoardDetail }) {

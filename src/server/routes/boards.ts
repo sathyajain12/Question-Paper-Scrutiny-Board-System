@@ -14,10 +14,13 @@ import type { Env } from '../env';
 import { requireRole, requireBoardAccess } from '../middleware/auth';
 import { getRepo } from '../repositories';
 import {
+  acknowledgeChangesSchema,
   approveBoardSchema,
+  closeBoardSchema,
   confirmScheduleSchema,
   offerDatesSchema,
   rejectBoardSchema,
+  requestChangesSchema,
   submitConstitutionSchema,
 } from '@shared/schemas/board';
 
@@ -134,9 +137,115 @@ boards.post(
   },
 );
 
+boards.post(
+  '/:boardId/notify-admin',
+  requireBoardAccess,
+  requireRole('hod'),
+  async (c) => {
+    const boardId = c.req.param('boardId');
+    const user = c.get('user');
+
+    console.log(`[Notification] HoD ${user.email} notified admin that board ${boardId} post-QPSB files are complete.`);
+
+    const repo = await getRepo(c.env);
+    await repo.appendAuditLog({
+      timestamp: new Date().toISOString(),
+      actorEmail: user.email,
+      action: 'notify_admin_files_complete',
+      boardId,
+      beforeJson: JSON.stringify({ notified: false }),
+      afterJson: JSON.stringify({ notified: true }),
+    });
+
+    return c.json({ success: true, message: 'Admin notified that files are complete.' });
+  }
+);
+
+/** Admin flags the post-QPSB files for correction — only once the board is Locked. */
+boards.post(
+  '/:boardId/request-changes',
+  requireRole('admin'),
+  zValidator('json', requestChangesSchema),
+  async (c) => {
+    const repo = await getRepo(c.env);
+    const board = await repo.requestChanges(
+      c.req.param('boardId'),
+      c.get('user'),
+      c.req.valid('json').version,
+    );
+    return c.json({ board });
+  },
+);
+
+/** HoD confirms the flagged corrections are done, clearing the flag and notifying admin. */
+boards.post(
+  '/:boardId/changes-incorporated',
+  requireBoardAccess,
+  requireRole('hod'),
+  zValidator('json', acknowledgeChangesSchema),
+  async (c) => {
+    const boardId = c.req.param('boardId');
+    const user = c.get('user');
+    const repo = await getRepo(c.env);
+
+    const board = await repo.acknowledgeChanges(
+      boardId,
+      user,
+      c.req.valid('json').version,
+    );
+
+    console.log(`[Notification] HoD ${user.email} notified admin that corrections for board ${boardId} are incorporated.`);
+    await repo.appendAuditLog({
+      timestamp: new Date().toISOString(),
+      actorEmail: user.email,
+      action: 'notify_admin_changes_incorporated',
+      boardId,
+      beforeJson: JSON.stringify({ notified: false }),
+      afterJson: JSON.stringify({ notified: true }),
+    });
+
+    return c.json({ board });
+  },
+);
+
+/**
+ * Admin closes the board after the QPSB session — revokes Drive access and
+ * notifies the HoD. Irreversible; the mock repository rejects a second call.
+ *
+ * Real Drive permission revocation is not modeled yet (see
+ * repositories/drive.ts) — this records the decision so the workflow is
+ * wired end-to-end, and the live repository can call Drive's permissions API
+ * from this same handler once that lands.
+ */
+boards.post(
+  '/:boardId/close',
+  requireRole('admin'),
+  zValidator('json', closeBoardSchema),
+  async (c) => {
+    const boardId = c.req.param('boardId');
+    const user = c.get('user');
+    const repo = await getRepo(c.env);
+
+    const board = await repo.closeBoard(boardId, user, c.req.valid('json').version);
+
+    console.log(`[Notification] Admin ${user.email} closed board ${boardId} — Drive access revoked, HoD notified.`);
+    await repo.appendAuditLog({
+      timestamp: new Date().toISOString(),
+      actorEmail: user.email,
+      action: 'notify_hod_board_closed',
+      boardId,
+      beforeJson: JSON.stringify({ notified: false }),
+      afterJson: JSON.stringify({ notified: true }),
+    });
+
+    return c.json({ board });
+  },
+);
+
 boards.post('/:boardId/appointment-email', requireRole('admin'), (c) => {
   void c;
   throw new Error('appointment email not implemented'); // Phase 5
 });
 
 export default boards;
+

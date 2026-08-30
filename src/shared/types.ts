@@ -41,8 +41,33 @@ export interface FacultyOverride {
   name: string;
   campus: string;
   action: FacultyOverrideAction;
+  /** Why the override was made — visiting staff, ward conflict, etc. Optional. */
+  reason: string | null;
   createdBy: string;
   createdAt: string;
+}
+
+/**
+ * One row of a department's override history — includes overrides that were
+ * later removed, which is the whole point: the Overrides table only ever
+ * shows what's *currently* in force.
+ */
+export interface FacultyAuditRow {
+  timestamp: string;
+  actorEmail: string;
+  changeType: 'added' | 'removed';
+  overrideAction: FacultyOverrideAction;
+  name: string;
+  email: string;
+  campus: string;
+  reason: string | null;
+}
+
+/** A board this faculty member currently appears on as a nominated member. */
+export interface ActiveNomination {
+  boardId: string;
+  programme: string;
+  status: BoardStatus;
 }
 
 export interface Course {
@@ -82,6 +107,10 @@ export interface BoardDetail extends BoardSummary {
   actionBy: string | null;
   actionAt: string | null;
   rejectionReason: string | null;
+  /** Set when the admin flags the post-QPSB files for correction; cleared when the HoD acknowledges the fix. */
+  changesRequested: boolean;
+  /** Set once the admin closes the board after the QPSB session — revokes Drive access. Irreversible. */
+  closed: boolean;
 }
 
 export interface DashboardCounts {

@@ -6,9 +6,11 @@
  * the live Sheets client (Phase 2). Swapping them is a factory change.
  */
 import type {
+  ActiveNomination,
   BoardDetail,
   BoardSummary,
   DashboardCounts,
+  FacultyAuditRow,
   FacultyMember,
   FacultyOverride,
   FacultyOverrideAction,
@@ -34,6 +36,7 @@ export interface SaveFacultyOverrideInput {
   name: string;
   campus: string;
   action: FacultyOverrideAction;
+  reason?: string;
 }
 
 export interface BoardRepo {
@@ -64,6 +67,23 @@ export interface BoardRepo {
    * retype it when adding faculty who already appear elsewhere.
    */
   findCampus(query: { name?: string; email?: string }): Promise<string | null>;
+
+  /**
+   * Boards in this department, other than Not Submitted, where this email
+   * currently appears among the nominated members — surfaced as a heads-up
+   * before an admin excludes someone, not a hard block.
+   */
+  findActiveNominations(
+    department: string,
+    email: string,
+  ): Promise<ActiveNomination[]>;
+
+  /**
+   * Every override change for this department, including ones later
+   * removed — the Overrides table only shows what's currently in force,
+   * this is the full history behind it.
+   */
+  listFacultyAuditLog(department: string): Promise<FacultyAuditRow[]>;
 
   // ── writes ─────────────────────────────────────────────────────────
   // Each takes the actor and the expected version; implementations must
@@ -100,6 +120,30 @@ export interface BoardRepo {
     actor: SessionUser,
     dates: string[],
     time: string,
+    expectedVersion: number,
+  ): Promise<BoardDetail>;
+
+  /** Admin flags the post-QPSB files for correction; only valid once Locked. */
+  requestChanges(
+    boardId: string,
+    actor: SessionUser,
+    expectedVersion: number,
+  ): Promise<BoardDetail>;
+
+  /** HoD confirms the flagged corrections are done, clearing the flag. */
+  acknowledgeChanges(
+    boardId: string,
+    actor: SessionUser,
+    expectedVersion: number,
+  ): Promise<BoardDetail>;
+
+  /**
+   * Admin closes the board once the QPSB session is done, revoking Drive
+   * access. Irreversible — rejects a board that is already closed.
+   */
+  closeBoard(
+    boardId: string,
+    actor: SessionUser,
     expectedVersion: number,
   ): Promise<BoardDetail>;
 

@@ -34,6 +34,8 @@ export const facultyIdentitySchema = z.object({
 export const saveFacultyOverrideSchema = facultyIdentitySchema.extend({
   department,
   action: z.enum(FACULTY_OVERRIDE_ACTIONS),
+  /** Why the override is being made. Optional — not every exclusion needs one. */
+  reason: z.string().trim().max(300).optional(),
 });
 
 export const deleteFacultyOverrideSchema = z.object({
@@ -42,6 +44,11 @@ export const deleteFacultyOverrideSchema = z.object({
 });
 
 export const departmentQuerySchema = z.object({ department });
+
+export const activeNominationsQuerySchema = z.object({
+  department,
+  email: facultyEmail,
+});
 
 /**
  * Campus lookup for the add-faculty form: either half may be blank, but not

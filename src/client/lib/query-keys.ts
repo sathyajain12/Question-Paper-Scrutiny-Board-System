@@ -11,6 +11,7 @@ export const queryKeys = {
       ['faculty', 'overrides', department] as const,
     campus: (name: string, email: string) =>
       ['faculty', 'campus', name, email] as const,
+    audit: (department: string) => ['faculty', 'audit', department] as const,
   },
   check: (boardId: string, type: CheckType) => ['check', boardId, type] as const,
   catalog: {

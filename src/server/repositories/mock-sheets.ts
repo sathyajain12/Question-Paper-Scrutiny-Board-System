@@ -10,9 +10,11 @@
  */
 import { assertTransition } from '@shared/domain/board-state';
 import type {
+  ActiveNomination,
   BoardDetail,
   BoardSummary,
   DashboardCounts,
+  FacultyAuditRow,
   FacultyMember,
   FacultyOverride,
   SessionUser,
@@ -196,6 +198,50 @@ export function createMockRepo(): BoardRepo {
       return match?.campus ?? fromOverride?.campus ?? null;
     },
 
+    async findActiveNominations(department, email): Promise<ActiveNomination[]> {
+      return boards
+        .filter(
+          (b) =>
+            b.department === department &&
+            b.status !== 'NotSubmitted' &&
+            b.members.some((m) => sameEmail(m.email, email)),
+        )
+        .map((b) => ({ boardId: b.boardId, programme: b.programme, status: b.status }));
+    },
+
+    async listFacultyAuditLog(department): Promise<FacultyAuditRow[]> {
+      const rows: FacultyAuditRow[] = [];
+
+      for (const entry of auditLog) {
+        if (entry.action !== 'saveFacultyOverride' && entry.action !== 'deleteFacultyOverride') {
+          continue;
+        }
+
+        // saveFacultyOverride: the state it was set to is in afterJson.
+        // deleteFacultyOverride: the state it had before removal is in beforeJson.
+        const json = entry.action === 'saveFacultyOverride' ? entry.afterJson : entry.beforeJson;
+        const override = JSON.parse(json) as FacultyOverride | null;
+        if (!override || override.department !== department) continue;
+
+        rows.push({
+          timestamp: entry.timestamp,
+          actorEmail: entry.actorEmail,
+          changeType: entry.action === 'saveFacultyOverride' ? 'added' : 'removed',
+          overrideAction: override.action,
+          name: override.name,
+          email: override.email,
+          campus: override.campus,
+          reason: override.reason ?? null,
+        });
+      }
+
+      // `auditLog` is already in chronological (oldest-first) order because
+      // entries are pushed as they happen; reversing — not re-sorting by
+      // timestamp string — is what's reliable when two changes land in the
+      // same millisecond, which happens constantly in tests.
+      return rows.reverse();
+    },
+
     async saveFacultyOverride(input: SaveFacultyOverrideInput, actor) {
       const inBaseList = baseFacultyFor(input.department).some((f) =>
         sameEmail(f.email, input.email),
@@ -222,6 +268,7 @@ export function createMockRepo(): BoardRepo {
       const saved: FacultyOverride = {
         ...input,
         email: input.email.toLowerCase(),
+        reason: input.reason?.trim() || null,
         createdBy: actor.email,
         createdAt: new Date().toISOString(),
       };
@@ -331,6 +378,50 @@ export function createMockRepo(): BoardRepo {
       board.version += 1;
 
       record(board, actor, 'confirmSchedule', before);
+      return board;
+    },
+
+    async requestChanges(boardId, actor, expectedVersion) {
+      const board = mustFind(boardId);
+      checkVersion(board, expectedVersion);
+      const before = structuredClone(board);
+
+      board.status = assertTransition('requestChanges', board.status, actor.role);
+      board.changesRequested = true;
+      board.version += 1;
+
+      record(board, actor, 'requestChanges', before);
+      return board;
+    },
+
+    async acknowledgeChanges(boardId, actor, expectedVersion) {
+      const board = mustFind(boardId);
+      checkVersion(board, expectedVersion);
+      const before = structuredClone(board);
+
+      board.status = assertTransition('acknowledgeChanges', board.status, actor.role);
+      board.changesRequested = false;
+      board.version += 1;
+
+      record(board, actor, 'acknowledgeChanges', before);
+      return board;
+    },
+
+    async closeBoard(boardId, actor, expectedVersion) {
+      const board = mustFind(boardId);
+      checkVersion(board, expectedVersion);
+
+      if (board.closed) {
+        throw new ConflictError(`${board.department} is already closed.`);
+      }
+
+      const before = structuredClone(board);
+
+      board.status = assertTransition('closeBoard', board.status, actor.role);
+      board.closed = true;
+      board.version += 1;
+
+      record(board, actor, 'closeBoard', before);
       return board;
     },
 

@@ -62,6 +62,12 @@ export const confirmScheduleSchema = z.object({
   time: z.enum(SESSION_TIMES),
 });
 
+export const requestChangesSchema = z.object({ version });
+
+export const acknowledgeChangesSchema = z.object({ version });
+
+export const closeBoardSchema = z.object({ version });
+
 export type SubmitConstitutionInput = z.infer<typeof submitConstitutionSchema>;
 export type RejectBoardInput = z.infer<typeof rejectBoardSchema>;
 export type OfferDatesInput = z.infer<typeof offerDatesSchema>;

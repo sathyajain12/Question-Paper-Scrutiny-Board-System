@@ -55,11 +55,10 @@ export default function AdminPage() {
                 key={f}
                 onClick={() => setFilter(f)}
                 aria-pressed={filter === f}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                  filter === f
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${filter === f
                     ? 'bg-brand-600 text-white'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                  }`}
               >
                 {f === 'All' ? 'All' : STATUS_LABELS[f]}
               </button>

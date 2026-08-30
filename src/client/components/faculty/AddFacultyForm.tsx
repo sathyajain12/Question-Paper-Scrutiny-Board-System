@@ -7,7 +7,7 @@ import {
 import { useCampusLookup } from '@/lib/hooks';
 import { Button } from '../ui/Button';
 
-const BLANK = { name: '', email: '', campus: '' };
+const BLANK = { name: '', email: '', campus: '', reason: '' };
 
 /**
  * Adds someone who has no Faculty row for this department — visiting staff,
@@ -23,7 +23,7 @@ export function AddFacultyForm({
 }: {
   department: string;
   saving: boolean;
-  onAdd: (input: FacultyIdentityInput) => Promise<unknown>;
+  onAdd: (input: FacultyIdentityInput & { reason?: string }) => Promise<unknown>;
 }) {
   const [fields, setFields] = useState(BLANK);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -61,7 +61,7 @@ export function AddFacultyForm({
     }
 
     setErrors({});
-    void onAdd(parsed.data)
+    void onAdd({ ...parsed.data, reason: fields.reason.trim() || undefined })
       .then(() => {
         setFields(BLANK);
         setLookup({ name: '', email: '' });
@@ -122,6 +122,17 @@ export function AddFacultyForm({
           </Button>
         </div>
       </div>
+
+      <label className="mt-3 block text-xs font-semibold text-slate-600">
+        Reason (optional)
+        <input
+          type="text"
+          value={fields.reason}
+          placeholder="e.g. visiting faculty for this semester"
+          onChange={(e) => set('reason', e.target.value)}
+          className="mt-1 block w-full max-w-lg rounded-md border border-slate-300 px-3 py-2 text-sm font-normal text-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
+        />
+      </label>
     </form>
   );
 }

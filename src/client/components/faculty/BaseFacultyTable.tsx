@@ -1,29 +1,41 @@
+import { useState } from 'react';
 import { Check, EyeOff, Undo2 } from 'lucide-react';
 import type { FacultyMember, FacultyOverride } from '@shared/types';
 import { Button } from '../ui/Button';
 import { EmptyState } from '../ui/states';
+import { ExcludeConfirmPanel } from './ExcludeConfirmPanel';
 
 /**
  * The department's Faculty rows, each with its exclusion state.
  *
- * Excluding is reversible from the same row, so there is no confirmation
- * prompt — the old portal's window.confirm() announced nothing to screen
- * readers and guarded an action that Restore undoes in one click.
+ * Restoring is reversible from the same row in one click, so it has no
+ * confirmation step — the old portal's window.confirm() announced nothing to
+ * screen readers and guarded an action that's trivially undoable anyway.
+ * Excluding gets a reveal (reason + active-nomination check) instead, since
+ * it's the one action here that isn't instantly one-click-reversible.
  */
 export function BaseFacultyTable({
+  department,
   baseFaculty,
   overrides,
-  pendingEmail,
+  isRowPending,
+  selected,
+  onToggleSelect,
   onExclude,
   onRestore,
 }: {
+  department: string;
   baseFaculty: FacultyMember[];
   overrides: FacultyOverride[];
-  /** Email currently being written, so only that row shows a spinner. */
-  pendingEmail: string | null;
-  onExclude: (member: FacultyMember) => void;
+  /** True while this email's row has a write in flight — single or bulk. */
+  isRowPending: (email: string) => boolean;
+  selected: Set<string>;
+  onToggleSelect: (email: string) => void;
+  onExclude: (member: FacultyMember, reason: string) => void;
   onRestore: (email: string) => void;
 }) {
+  const [revealedFor, setRevealedFor] = useState<string | null>(null);
+
   const excluded = new Set(
     overrides
       .filter((o) => o.action === 'exclude')
@@ -44,6 +56,9 @@ export function BaseFacultyTable({
       <table className="w-full min-w-2xl border-collapse bg-white text-sm">
         <thead>
           <tr className="bg-slate-50 text-left text-xs tracking-wide text-slate-600 uppercase">
+            <th scope="col" className="w-8 px-3 py-2.5">
+              <span className="sr-only">Select</span>
+            </th>
             <th scope="col" className="px-3 py-2.5">Name</th>
             <th scope="col" className="px-3 py-2.5">Email</th>
             <th scope="col" className="px-3 py-2.5">Campus</th>
@@ -53,11 +68,22 @@ export function BaseFacultyTable({
         </thead>
         <tbody className="divide-y divide-slate-100">
           {baseFaculty.map((member) => {
-            const isExcluded = excluded.has(member.email.toLowerCase());
-            const pending = pendingEmail === member.email.toLowerCase();
+            const email = member.email.toLowerCase();
+            const isExcluded = excluded.has(email);
+            const pending = isRowPending(email);
+            const revealed = revealedFor === email;
 
             return (
               <tr key={member.email} className={isExcluded ? 'bg-slate-50' : ''}>
+                <td className="px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(email)}
+                    onChange={() => onToggleSelect(email)}
+                    aria-label={`Select ${member.name}`}
+                    className="h-4 w-4 accent-brand-600"
+                  />
+                </td>
                 <td
                   className={`px-3 py-2.5 font-medium ${
                     isExcluded ? 'text-slate-400 line-through' : 'text-slate-800'
@@ -94,11 +120,23 @@ export function BaseFacultyTable({
                       <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
                       Restore
                     </Button>
+                  ) : revealed ? (
+                    <div className="w-72">
+                      <ExcludeConfirmPanel
+                        department={department}
+                        members={[member]}
+                        busy={pending}
+                        onCancel={() => setRevealedFor(null)}
+                        onConfirm={(reason) => {
+                          onExclude(member, reason);
+                          setRevealedFor(null);
+                        }}
+                      />
+                    </div>
                   ) : (
                     <Button
                       variant="danger"
-                      loading={pending}
-                      onClick={() => onExclude(member)}
+                      onClick={() => setRevealedFor(email)}
                     >
                       <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
                       Exclude

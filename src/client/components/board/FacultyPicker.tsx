@@ -47,8 +47,7 @@ export function FacultyPicker({
     <div className="mt-4">
       <div className="rounded-md bg-brand-50 px-4 py-3">
         <p className="text-sm font-semibold text-brand-700">
-          Select {MIN_BOARD_MEMBERS} or {MAX_BOARD_MEMBERS} senior faculty for
-          this Board
+          Select facult memebers for the QPSB( {MIN_BOARD_MEMBERS} or {MAX_BOARD_MEMBERS} Senior faculty members per academic programme)
         </p>
         <p aria-live="polite" className="mt-0.5 text-sm text-slate-600">
           {selected.length} selected
@@ -74,9 +73,8 @@ export function FacultyPicker({
             return (
               <li key={f.email}>
                 <label
-                  className={`flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm hover:bg-slate-50 ${
-                    !checked && atLimit ? 'opacity-50' : ''
-                  }`}
+                  className={`flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm hover:bg-slate-50 ${!checked && atLimit ? 'opacity-50' : ''
+                    }`}
                 >
                   <input
                     type="checkbox"

@@ -14,6 +14,7 @@ import { requireRole } from '../middleware/auth';
 import { getRepo } from '../repositories';
 import type { BoardRepo } from '../repositories';
 import {
+  activeNominationsQuerySchema,
   campusLookupSchema,
   departmentQuerySchema,
   deleteFacultyOverrideSchema,
@@ -82,6 +83,27 @@ faculty.delete(
     await repo.deleteFacultyOverride(department, email, c.get('user'));
 
     return c.json(await snapshot(repo, department));
+  },
+);
+
+/** Heads-up before an admin excludes someone already nominated somewhere. */
+faculty.get(
+  '/nominations',
+  zValidator('query', activeNominationsQuerySchema),
+  async (c) => {
+    const { department, email } = c.req.valid('query');
+    const repo = await getRepo(c.env);
+    return c.json({ nominations: await repo.findActiveNominations(department, email) });
+  },
+);
+
+/** Full override history for a department, including removed overrides. */
+faculty.get(
+  '/audit',
+  zValidator('query', departmentQuerySchema),
+  async (c) => {
+    const repo = await getRepo(c.env);
+    return c.json({ history: await repo.listFacultyAuditLog(c.req.valid('query').department) });
   },
 );
 
