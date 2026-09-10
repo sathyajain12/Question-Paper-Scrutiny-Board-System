@@ -25,6 +25,30 @@ export function formatDateLong(iso: string): string {
 }
 
 /**
+ * Chat timestamp: the clock time for today's messages, date + time for older
+ * ones — a support thread left open overnight would otherwise show two
+ * indistinguishable "10:15" stamps a day apart.
+ */
+export function formatChatTime(isoTimestamp: string): string {
+  const date = new Date(isoTimestamp);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const time = new Intl.DateTimeFormat('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+
+  const isToday = date.toDateString() === new Date().toDateString();
+  if (isToday) return time;
+
+  const day = new Intl.DateTimeFormat('en-IN', {
+    day: '2-digit',
+    month: 'short',
+  }).format(date);
+  return `${day}, ${time}`;
+}
+
+/**
  * Renders a scheduled session. All dates share one start time, so show the
  * time once rather than repeating it per date.
  */

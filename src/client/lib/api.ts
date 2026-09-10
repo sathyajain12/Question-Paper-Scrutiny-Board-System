@@ -34,7 +34,7 @@ const DEV_USER_STORAGE_KEY = 'qpsb.devUser';
  * navigation drops the query string. The server honours the parameter only
  * when DEV_MODE is on, so this is inert in production.
  */
-function withDevUser(path: string): string {
+export function withDevUser(path: string): string {
   const fromUrl = new URLSearchParams(window.location.search).get('as');
   if (fromUrl) sessionStorage.setItem(DEV_USER_STORAGE_KEY, fromUrl);
 

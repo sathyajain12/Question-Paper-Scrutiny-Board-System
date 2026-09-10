@@ -20,11 +20,20 @@
     { "binding": "CACHE", "id": "TODO_CREATE_WITH_wrangler_kv_namespace_create_CACHE" }
   ],
 
-  // One instance per boardId serialises writes to Sheets. See §7.
+  // BOARD_LOCK: one instance per boardId serialises writes to Sheets. See §7.
+  // SUPPORT_CHAT: a single instance for the whole support desk — every HoD and
+  // admin socket lands on the same object, which is what makes "is an admin
+  // online?" a fact rather than a heartbeat guess.
   "durable_objects": {
-    "bindings": [{ "name": "BOARD_LOCK", "class_name": "BoardLock" }]
+    "bindings": [
+      { "name": "BOARD_LOCK", "class_name": "BoardLock" },
+      { "name": "SUPPORT_CHAT", "class_name": "SupportChat" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BoardLock"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["BoardLock"] },
+    { "tag": "v2", "new_sqlite_classes": ["SupportChat"] }
+  ],
 
   "vars": {
     // Serves in-memory fixtures and enables ?as= role switching.

@@ -122,6 +122,74 @@ export interface DashboardCounts {
   locked: number;
 }
 
+// ── Support desk ─────────────────────────────────────────────────────
+// Live HoD ↔ administrator chat, for the case the FAQ does not cover.
+// One conversation per HoD, identified by their lower-cased email — a HoD
+// has one running thread with the office, not one per board, because the
+// questions that reach a person are rarely about a single board.
+
+export type SupportConversationStatus = 'open' | 'resolved';
+
+export interface SupportMessage {
+  id: string;
+  conversationId: string;
+  authorEmail: string;
+  authorName: string;
+  authorRole: Role;
+  text: string;
+  /** ISO timestamp, set by the server — never trust a client clock. */
+  sentAt: string;
+}
+
+export interface SupportConversation {
+  /** The HoD's lower-cased email. */
+  conversationId: string;
+  hodEmail: string;
+  hodName: string;
+  departments: string[];
+  status: SupportConversationStatus;
+  createdAt: string;
+  lastMessageAt: string;
+  lastMessagePreview: string;
+  /** Messages from the HoD no administrator has opened yet. */
+  unreadForAdmin: number;
+  /** Replies from an administrator this HoD has not seen yet. */
+  unreadForHod: number;
+}
+
+/**
+ * Derived from live socket connections, not from a heartbeat table — an
+ * administrator counts as online exactly while a browser tab of theirs is
+ * connected to the desk.
+ */
+export interface SupportPresence {
+  adminsOnline: number;
+  adminNames: string[];
+}
+
+/** Server → client frames. The client never invents these. */
+export type SupportServerFrame =
+  | {
+      type: 'init';
+      presence: SupportPresence;
+      /** Present for a HoD: their own thread. */
+      conversation?: SupportConversation;
+      messages?: SupportMessage[];
+      /** Present for an administrator: every thread, newest activity first. */
+      conversations?: SupportConversation[];
+    }
+  | { type: 'presence'; presence: SupportPresence }
+  | { type: 'message'; message: SupportMessage; conversation: SupportConversation }
+  | { type: 'conversation'; conversation: SupportConversation }
+  | { type: 'history'; conversationId: string; messages: SupportMessage[] }
+  | {
+      type: 'typing';
+      conversationId: string;
+      authorName: string;
+      authorRole: Role;
+    }
+  | { type: 'error'; message: string };
+
 /** One cell of the Pre/Post-QPSB check matrix. */
 export interface FolderCheck {
   status: 'found' | 'missing' | 'folderNotFound';

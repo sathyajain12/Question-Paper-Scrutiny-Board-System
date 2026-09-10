@@ -13,6 +13,7 @@ import ConstitutionPage from './routes/constitution';
 import FileCheckerPage from './routes/file-checker';
 import AdminPage from './routes/admin';
 import FacultyOverridesPage from './routes/faculty';
+import SupportDeskPage from './routes/support';
 
 export default function App() {
   return (
@@ -45,6 +46,15 @@ export default function App() {
           element={
             <RequireRole roles={['admin']}>
               <FacultyOverridesPage />
+            </RequireRole>
+          }
+        />
+
+        <Route
+          path="support"
+          element={
+            <RequireRole roles={['admin']}>
+              <SupportDeskPage />
             </RequireRole>
           }
         />

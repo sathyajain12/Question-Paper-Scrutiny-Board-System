@@ -698,3 +698,209 @@ until someone implements it.
 Given §7, that is the moment to either adopt shadcn/ui as originally planned or
 formally decide against it and own the accessibility work by hand. **Not yet
 decided.**
+
+---
+
+### 2026-09-10 — Help widget: browse view, and a live HoD ↔ admin support desk
+
+**Decision.** Two changes to the HoD help widget, plus a new admin screen.
+
+1. The FAQ widget gained a **`browse` view** and a back arrow.
+2. A HoD who cannot find their answer can **talk to an administrator in real
+   time**, over a WebSocket held by a new `SupportChat` Durable Object. When no
+   administrator is connected, the widget says so and offers a phone number.
+
+**Why the browse view.** The original widget rendered its suggested questions
+only while `messages.length === 0`. Asking one thing destroyed the list
+permanently, with no way back — the user's words were "there is no going back
+option to select any question". Rather than re-showing the same five
+suggestions, `browse` lists **every** entry grouped by category, and each
+non-root view has a back arrow. There is now no state the widget can reach
+from which the full question list is unreachable.
+
+**Why a Durable Object rather than polling.** Presence is the crux. The
+promise made to a HoD is "someone is on the portal right now, or here is a
+phone number" — a promise that is worse than useless if it is wrong. A DO is
+the only place in this stack where *every* participant's connection is
+represented in one object, so `getWebSockets('role:admin')` **is** the answer,
+not an inference from last-seen timestamps in a table. Polling would have
+given a 3-second lag and a presence signal assembled from heartbeats, which is
+strictly more machinery for a strictly worse answer. It reuses the pattern
+BoardLock already established, and it needs no Google credentials, so it works
+completely today.
+
+**Alternatives rejected.** HTTP polling (above). A third-party chat widget:
+sends institute correspondence to an external service, and cannot see portal
+identity. Email: no presence, no "resolve", no thread.
+
+**One DO for the whole desk, not one per conversation.** Presence is a
+property of the desk, not of any thread. Per-conversation objects would mean
+querying N objects to answer "is anyone online", and no object would know the
+answer by itself.
+
+**Cost.** A new DO class and migration (`v2`), and a socket held open per
+signed-in HoD and admin. Hibernation keeps an idle desk free of duration
+billing. The socket is opened in `AppLayout` rather than in either screen, so
+an admin counts as available whenever the portal is open — anything narrower
+would make the presence signal mean "is on the Support Desk page", which is
+not what a HoD is being told.
+
+**Code.** `src/server/durable-objects/support-chat.ts`,
+`src/server/routes/support.ts`, `src/client/lib/support.tsx`,
+`src/client/routes/support/index.tsx`,
+`src/client/components/help-chat/HelpChatWidget.tsx`,
+`src/shared/constants/support.ts`, `src/shared/schemas/support.ts`.
+
+**Verified by.** A 20-check scripted run driving two live sockets: thread
+creation, delivery both ways, unread counters, resolve/reopen, history
+ordering, and presence transitions. Plus `npm test` (34), typecheck, lint, and
+`vite build`.
+
+---
+
+### 2026-09-10 — Support presence needs liveness, not just close events
+
+**Decision.** Socket liveness is established by a ping/pong heartbeat plus an
+alarm sweep, and presence counts only sockets that have answered recently.
+
+**Why.** Found while testing, and it is a genuine defect rather than a test
+artefact: a socket that dies **without a close handshake** — a closed laptop,
+a crashed tab, a dropped connection — stays registered with the runtime.
+`webSocketClose` never fires, so its owner is reported as online forever. For
+an administrator that is the worst possible failure mode, because it silently
+defeats the one thing this feature promises: the HoD is told help is available,
+waits, and never sees the phone number.
+
+The fix has three parts, and the third is the one that matters most:
+
+1. The client pings every 30 s.
+2. The DO records `lastSeen` on the socket's attachment when a ping arrives.
+3. `presence()` ignores any socket that has not pinged within 90 s, and a 30 s
+   alarm sweeps while anyone is connected. Presence therefore corrects itself
+   on a timer rather than only when someone connects or disconnects.
+
+**Considered, and a wrong turn worth recording: `setWebSocketAutoResponse`.**
+The cheaper implementation has the *runtime* answer `pong` and timestamp it
+via `getWebSocketAutoResponseTimestamp()`, never waking the DO — an idle desk
+would then cost nothing at all, which is the entire point of hibernation. It
+was built that way first, and replaced with explicit tracking.
+
+**The first diagnosis for replacing it was wrong, so don't inherit it.**
+During testing an administrator appeared permanently online while the
+auto-response timestamp kept advancing. That looked like the runtime
+refreshing the timestamp on *any* socket activity — including this object's
+own outbound broadcasts, which would be self-sustaining and fatal: the sweep
+writes to a dead socket, marking the dead socket alive, forever. It was not
+that. The timestamp advanced because the socket was **genuinely alive** — a
+browser tab was open on the portal as that user, heartbeating every 30 s
+exactly as designed. Presence deduplicates by email, so that one real tab also
+masked every test that tried to drive the same account. The auto-response
+variant was never actually shown to be broken.
+
+What settled it was **testability, not correctness**. Recording the ping in
+`webSocketMessage` puts `lastSeen` in the socket's own attachment, where it
+can be asserted on directly and behaves identically in dev and production. The
+cost is one DO wake per client per 30 s — negligible at tens of HoDs and a
+couple of admins. If the desk ever grows enough for that to matter, revisiting
+the auto-response variant is reasonable; just verify it against a socket that
+is *provably* silent, on an account nobody has open.
+
+**A related fragility fixed at the same time.** `broadcastPresence` originally
+relied on the runtime having already removed the closing socket from
+`getWebSockets()` by the time `webSocketClose` ran. That happened to hold only
+because an `await` inside the handler introduced a microtask boundary;
+removing the `await` broke presence outright. The closing socket is now passed
+in and excluded explicitly, so the result no longer depends on scheduling.
+
+**Cost.** A few bytes every 30 s per connection, and one pending alarm while
+anyone is connected. An unclean disconnect takes up to ~120 s to be noticed —
+a bounded, known window, versus the previous behaviour of never.
+
+**Code.** `src/server/durable-objects/support-chat.ts` (`isAlive`, `alarm`,
+`scheduleSweep`), `src/client/lib/support.tsx` (heartbeat).
+
+**Verified by.** A socket that connects and then never pings, with its TCP
+connection deliberately left open, is closed by the server after **109 s**
+with `1001 No ping received` — inside the expected 90 s timeout plus up to one
+30 s sweep. A socket whose TCP is destroyed outright is dropped sooner, by the
+runtime's own close handling.
+
+**Testing note for whoever comes next.** Presence deduplicates by email, and
+`?as=` impersonation means a developer's own browser tab counts as a real
+user. A tab left open as `coe@sssihl.edu.in` will keep that admin online
+through every server restart — the client reconnects by itself — and will
+silently invalidate any test that tries to drive the same account. Close the
+tab, or test with an account nobody has open.
+
+---
+
+### 2026-09-10 — Typing indicators
+
+**Decision.** A `typing` frame in both directions, expiring on a receiver-side
+timeout. Nothing is stored and nothing is acknowledged.
+
+**Why this approach.** Three properties fall out of treating typing as pure
+signal rather than as state:
+
+- **No "stopped typing" frame.** The receiver hides the indicator
+  `TYPING_TTL_MS` after the last frame it saw. A closed tab, a dropped socket
+  or a lost frame therefore cannot strand someone as permanently "typing" —
+  the failure mode of every implementation that waits to be told to stop.
+- **No storage, no alarm.** A keystroke must not cost a Durable Object write.
+  A lost typing frame is a non-event, which is exactly the right cost profile
+  for something sent this often.
+- **Throttled in the provider, not the component.** `notifyTyping` drops calls
+  inside `TYPING_THROTTLE_MS`, so `onChange` handlers can call it on every
+  keystroke without each call site re-implementing the same guard. The TTL is
+  deliberately double the throttle — closer together and a steady typist would
+  flicker between states.
+
+**Routing.** A frame goes only to the other side of that conversation: an
+admin's keystrokes reach that one HoD, a HoD's reach the admins. It is never
+echoed to the sender, and never reaches an unrelated HoD — a support thread is
+private to the two parties, and typing leaks presence just as much as a
+message does.
+
+**Bidirectional, though only admin → HoD was asked for.** Routing to "the
+other party" is less code than special-casing one direction, and an admin
+watching a HoD compose a question benefits identically. Trivial to restrict if
+that is not wanted.
+
+**Authority, as everywhere else.** A HoD's `conversationId` is ignored and
+replaced with their own email, exactly as `handleSend` does — otherwise a
+crafted frame could make an arbitrary HoD appear to be typing in someone
+else's thread.
+
+**Cost.** One frame per two seconds per actively-typing client. No persistence.
+
+**Accessibility.** The dots are `aria-hidden`; the sentence beside them is the
+accessible text, inside a `polite` live region so it never interrupts. The
+animation is disabled under `prefers-reduced-motion` — the motion is
+decoration, the text carries the meaning.
+
+**Code.** `shared/constants/support.ts` (TTL + throttle),
+`shared/schemas/support.ts`, `server/durable-objects/support-chat.ts`
+(`handleTyping`), `client/lib/support.tsx` (`notifyTyping`,
+`typingByConversation`), `client/components/ui/TypingIndicator.tsx`,
+`client/index.css` (keyframes).
+
+**Verified by.** 10 scripted checks over three live sockets: the HoD receives
+the admin's frame with the right name, role and thread; it is not echoed to
+the sender; it does not reach an unrelated HoD; the reverse direction works; a
+HoD-supplied `conversationId` is ignored; and nothing lands in stored history.
+
+---
+
+### ⚠️ Before deploying the support desk
+
+- **Set the phone number.** `SUPPORT_PHONE` in
+  `src/shared/constants/support.ts` is a deliberate `TODO` placeholder. The
+  widget detects this and shows a configuration notice rather than a fake
+  number — a plausible-looking wrong number is worse than an obvious gap,
+  because a HoD would dial it.
+- Conversations live in Durable Object storage, **not** in Google Sheets. They
+  are outside the `AuditLog` (§4 of ARCHITECTURE.md). If support threads need
+  to be auditable alongside board actions, that is unbuilt work.
+- Messages are **not** encrypted at rest beyond what Cloudflare provides, and
+  a HoD may well paste something sensitive into a support chat. Worth a
+  retention policy; currently a thread keeps its last 500 messages forever.

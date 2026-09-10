@@ -22,9 +22,10 @@ A map of what runs, in what order, and what calls what.
 5. [Walkthrough A — Admin approves a board](#5-walkthrough-a--admin-approves-a-board)
 6. [Walkthrough B — HoD submits a constitution](#6-walkthrough-b--hod-submits-a-constitution)
 7. [Walkthrough C — a 409 version conflict](#7-walkthrough-c--a-409-version-conflict)
-8. [Call graph by module](#8-call-graph-by-module)
-9. [Where execution currently stops](#9-where-execution-currently-stops)
-10. [What AI changed in this session](#10-what-ai-changed-in-this-session)
+8. [Walkthrough D — a HoD asks for help](#8-walkthrough-d--a-hod-asks-for-help)
+9. [Call graph by module](#9-call-graph-by-module)
+10. [Where execution currently stops](#10-where-execution-currently-stops)
+11. [What AI changed in this session](#11-what-ai-changed-in-this-session)
 
 ---
 
@@ -34,8 +35,13 @@ A map of what runs, in what order, and what calls what.
 |---|---|---|---|
 | 1 | **Worker `fetch`** | [`src/server/index.ts`](../src/server/index.ts) → `export default app` | Every HTTP request to the origin |
 | 2 | **Browser bootstrap** | [`index.html`](../index.html) → `<script src="/src/client/main.tsx">` | The browser, after the Worker serves the HTML |
-| 3 | **Durable Object** | [`src/server/durable-objects/board-lock.ts`](../src/server/durable-objects/board-lock.ts) → `BoardLock.fetch` | Worker code addressing a DO stub (**not yet wired** — §9) |
-| 4 | **Dev server** | [`vite.config.ts`](../vite.config.ts) → `@cloudflare/vite-plugin` | `npm run dev` — runs the Worker in workerd alongside Vite's HMR |
+| 3 | **Durable Object — BoardLock** | [`src/server/durable-objects/board-lock.ts`](../src/server/durable-objects/board-lock.ts) → `BoardLock.fetch` | Worker code addressing a DO stub (**not yet wired** — §10) |
+| 4 | **Durable Object — SupportChat** | [`src/server/durable-objects/support-chat.ts`](../src/server/durable-objects/support-chat.ts) → `fetch`, `webSocketMessage`, `alarm` | A WebSocket upgrade on `/api/support/ws`, an inbound frame, or the liveness alarm |
+| 5 | **Dev server** | [`vite.config.ts`](../vite.config.ts) → `@cloudflare/vite-plugin` | `npm run dev` — runs the Worker in workerd alongside Vite's HMR |
+
+Entry point 4 is the only one that is **not** request/response: once the socket
+is open, the DO pushes frames to clients on its own, and its `alarm()` runs on
+a timer with no client involved at all.
 
 **Entry point 1 is the true root.** Even loading `index.html` goes through the
 Worker: the SPA is served by the `ASSETS` binding from inside the same
@@ -328,7 +334,78 @@ server's own text instead. See
 
 ---
 
-## 8. Call graph by module
+## 8. Walkthrough D — a HoD asks for help
+
+The one flow that is not request/response. Note where the socket is *opened*:
+in the layout, not in the widget.
+
+```
+[BROWSER — HoD]
+ 1  AppLayout mounts, useSession() resolves
+ 2    └─ <SupportProvider user={user}>            lib/support.tsx
+ 3       └─ new WebSocket('/api/support/ws?as=…') ← withDevUser(), same as fetch
+ 4          └─ heartbeat: send 'ping' every 30s
+
+[WORKER]
+ 5  requireSession                     → c.set('user', hod)
+ 6  routes/support.ts  GET /ws
+ 7    ├─ reject unless Upgrade: websocket        → 426
+ 8    ├─ reject viewers                          → 403
+ 9    ├─ stamp X-QPSB-Support-User with the SESSION identity
+10    └─ SUPPORT_CHAT.idFromName('qpsb-support-desk').fetch(req)
+         ↑ one instance for the whole desk — that is what makes presence a fact
+
+[DURABLE OBJECT — SupportChat]
+11  fetch()
+      ├─ acceptWebSocket(server, ['role:hod', 'user:<email>'])   ← hibernation
+      ├─ serializeAttachment({ …user, connectedAt })             ← survives hibernation
+      ├─ sendInit  → { type:'init', presence, conversation?, messages }
+      └─ scheduleSweep()                                          ← liveness alarm
+
+[BROWSER — HoD]  widget opens, user picks "Talk to a person"
+12  presence.adminsOnline === 0  → render the phone-number panel
+    presence.adminsOnline  >  0  → render "N people online"
+13  types a message → send() → { type:'send', text }
+
+[DURABLE OBJECT]
+14  webSocketMessage
+      ├─ 'ping'? → record lastSeen on the attachment, reply 'pong', done
+      ├─ supportClientFrameSchema.safeParse    ← the ONLY validation on this path
+      └─ handleSend
+           ├─ conversationId = OWN email for a HoD — the payload field is ignored
+           ├─ storage.put msg / seq / conv
+           ├─ unreadForAdmin += 1
+           └─ broadcast → toUser(hod) + toAdmins()
+
+[BROWSER — every connected admin]
+15  frame 'message' → conversations list re-sorts, nav badge increments
+16  admin opens /support → requestHistory + markRead → unreadForAdmin = 0
+17  admin replies → same path, unreadForHod += 1 → HoD's launcher shows a badge
+```
+
+**Presence, and why it is trustworthy.** `adminsOnline` is computed by
+`presence()` from `getWebSockets('role:admin')`, deduplicated **by email** (an
+admin with three tabs is one person who can answer), and filtered by
+`isAlive()`. A socket counts as alive only if it pinged within 90 s — because a
+socket whose owner closed their laptop never fires `webSocketClose` and would
+otherwise be reported as online forever. `alarm()` re-checks every 30 s while
+anyone is connected, so presence corrects itself on a timer rather than only
+when someone connects or disconnects.
+
+```
+                     ┌──────────── SupportChat (one instance) ───────────┐
+  HoD tab ──ws──────►│ tag role:hod  user:hod.maths@…                    │
+  Admin tab ──ws────►│ tag role:admin user:coe@…                         │
+  Admin phone ──ws──►│ tag role:admin user:coe@…   ← same email, 1 person│
+                     │                                                   │
+                     │ presence() = distinct alive emails tagged admin   │
+                     │ storage    = conv:<id>, msg:<id>:<seq>, seq:<id>  │
+                     └───────────────────────────────────────────────────┘
+```
+
+---
+
+## 9. Call graph by module
 
 ### Client
 
@@ -337,7 +414,12 @@ index.html
 └── main.tsx ......................... QueryClient, providers
     └── App.tsx ...................... route table + HomeRedirect
         └── AppLayout.tsx ............ useSession → logo, role-aware nav, <Outlet/>
+            │                          ├── SupportProvider ← owns the WS for BOTH roles
+            │                          ├── NavBar → useAdminUnreadCount() badge
             │                          └── HelpChatWidget  (HoD only)
+            │                              ├── 'faq'    canned answers + footer chips
+            │                              ├── 'browse' every question, by category
+            │                              └── 'live'   useSupport() → real admin chat
             ├── ConstitutionPage ..... useBoards
             │   └── BoardCard ........ useBoard, useSubmitConstitution, useConfirmSchedule
             │       ├── FacultyPicker      (NotSubmitted | Rejected)
@@ -354,6 +436,8 @@ index.html
             │           ├── 'Submitted' → ApproveOrReject   useApproveBoard / useRejectBoard
             │           ├── 'Approved'  → OfferDates        useOfferDates
             │           └── 'Locked'    → LockedActions     useRequestChanges
+            ├── SupportDeskPage ...... useSupport()            [admin only]
+            │   └── ConversationList . inbox; selecting one → requestHistory + markRead
             └── FacultyOverridesPage . useFacultyDepartments, useFacultyOverrides,
                 │                       useFacultyAuditLog, useSaveFacultyOverride,
                 │                       useDeleteFacultyOverride
@@ -397,6 +481,10 @@ index.ts
 │                                                 └── snapshot() = base + overrides + effective
 ├── /api/checks ──────────► routes/checks.ts      /pre (office only), /post
 ├── /api/downloads ───────► routes/downloads.ts   [stub — Phase 5]
+├── /api/support/ws ──────► routes/support.ts     auth + identity header, then
+│                                                 SUPPORT_CHAT.idFromName(…).fetch()
+│                                                 └── durable-objects/support-chat.ts
+│                                                     fetch / webSocketMessage / alarm
 └── get('*') ─────────────► c.env.ASSETS.fetch()  SPA + static files
 
 repositories/index.ts   getRepo() / getDriveRepo()      ← the mock ⇄ live seam
@@ -408,8 +496,12 @@ shared/  (imported by BOTH sides — one definition, two consumers)
    ├── domain/board-state.ts   TRANSITIONS, assertTransition, STATUS_LABELS
    ├── schemas/board.ts        submit/approve/reject/dates/schedule
    ├── schemas/faculty.ts      override + lookup schemas
+   ├── schemas/support.ts      the socket's client→server frames
    ├── constants/folder-spec.ts PRE_/POST_QPSB_FOLDERS, DRIVE_FANOUT_CONCURRENCY
-   └── types.ts                BoardSummary, BoardDetail, SessionUser, …
+   ├── constants/faq.ts        FAQ entries + the keyword/synonym search
+   ├── constants/support.ts    SUPPORT_PHONE, message cap, desk instance name
+   └── types.ts                BoardSummary, BoardDetail, SessionUser,
+                               SupportConversation, SupportServerFrame, …
 ```
 
 **`shared/` is the reason the two halves stay in sync.** `STATUS_LABELS` renders
@@ -418,7 +510,7 @@ the badge in `StatusBadge.tsx` *and* the filter chips in `AdminPage`, while
 
 ---
 
-## 9. Where execution currently stops
+## 10. Where execution currently stops
 
 Following a path and hitting a wall is expected in several places. These are
 deliberate stubs, not bugs.
@@ -434,46 +526,112 @@ deliberate stubs, not bugs.
 | `POST /:boardId/appointment-email` | `routes/boards.ts` | throws — Phase 5 (the button is rendered `disabled`) |
 | board close → Drive de-share | `repo.closeBoard` | flips `closed`, appends an audit entry, `console.log`s. **No Drive permission is actually revoked.** |
 | any "notify" action | `notify-admin`, `request-changes`, `close` | `console.log` + audit entry. **No email is sent.** |
+| support widget → "no one is online" | `SUPPORT_PHONE` in `shared/constants/support.ts` | a `TODO` placeholder. The widget detects it and shows a configuration notice instead of a fake number. |
 
 Full list with phase numbers: [DECISION.md §8](DECISION.md#8-known-gaps-and-deliberate-stubs).
 
+**The support desk is the exception on this page** — unlike the board
+workflow, it is wired end to end and works against real state today, because
+it depends on Durable Object storage rather than on Google.
+
 ---
 
-## 10. What AI changed in this session
+## 11. What AI changed in this session
 
-**Session date:** 2026-09-07 · **Base commit:** `434398a`
+Newest last. Append; do not rewrite history.
 
-### Application code changed: **none**
+---
 
-No file under [`src/`](../src/), no config, no `package.json` entry was created,
-edited, or deleted. `git status` was clean before this session and the only
-additions are the two documents below. **Every behaviour described in this
-document was read from the existing code, not written during this session.**
+### 2026-09-07 — Documentation only
 
-### Files created
+**Base commit:** `434398a`. **Application code changed: none.** No file under
+`src/`, no config, no `package.json` entry. Everything described in this
+document was read from existing code.
 
-| File | What it is |
+**Added:** [`docs/DECISION.md`](DECISION.md), [`docs/FLOW.md`](FLOW.md).
+
+**Also done, no code:** `npm install` (301 packages, 0 vulnerabilities; one
+`EBADENGINE` — `react-router@8.3.0` wants Node ≥ 22.22.0, machine has
+22.19.0); `npm run dev`; smoke tests of `/`, `/api/me` for both roles, and
+`/api/boards`; an advisory Admin Portal UI review recorded in
+[DECISION.md §9](DECISION.md#9-session-log) but **not implemented**.
+
+`.dev.vars` deliberately not created — under `DEV_MODE: "true"`, `getRepo()`
+returns the mock before any secret is read.
+
+---
+
+### 2026-09-10 — Help widget navigation + live support desk
+
+**Base commit:** `8195b1e`.
+
+**Added — server**
+
+| File | What it does |
 |---|---|
-| [`docs/DECISION.md`](DECISION.md) | Decision log — why each approach and library was chosen, plus known gaps |
-| [`docs/FLOW.md`](FLOW.md) | This file |
+| `src/server/durable-objects/support-chat.ts` | The desk. One instance for everyone: sockets, presence, liveness sweep, conversation + message storage. |
+| `src/server/routes/support.ts` | Authenticates the upgrade, stamps the session identity onto the request, forwards to the DO. |
 
-### Non-code actions taken
+**Added — client**
 
-| Action | Result |
+| File | What it does |
 |---|---|
-| `npm install` | 301 packages, 0 vulnerabilities. **`node_modules/` did not exist before this session.** One `EBADENGINE` warning: `react-router@8.3.0` wants Node ≥ 22.22.0; this machine has **22.19.0**. |
-| `npm run dev` | Vite 8 + Worker, ready in ~15 s at <http://localhost:5173/> — still running |
-| Smoke tests | `GET /` → 200 · `/api/me?as=coe@sssihl.edu.in` → admin · `/api/me?as=hod.maths@sssihl.edu.in` → HoD/Mathematics · `/api/boards` → seeded boards |
-| Admin Portal UI review | Advisory only — findings recorded in [DECISION.md §9](DECISION.md#9-session-log). **Nothing was implemented.** |
+| `src/client/lib/support.tsx` | `SupportProvider` / `useSupport()` — owns the socket, reconnect backoff, heartbeat. |
+| `src/client/routes/support/index.tsx` | The admin inbox: thread list, transcript, reply, resolve. |
 
-`.dev.vars` was deliberately **not** created: under `DEV_MODE: "true"`,
-`getRepo()` returns the mock before any secret is read, so nothing in
-`.dev.vars.example` is consulted.
+**Added — shared**
+
+| File | What it does |
+|---|---|
+| `src/shared/constants/support.ts` | `SUPPORT_PHONE` (**placeholder — must be set before deploy**), message cap, desk instance id. |
+| `src/shared/schemas/support.ts` | Zod for client→server frames — the only validation on the socket path. |
+
+**Changed**
+
+| File | Change |
+|---|---|
+| `src/client/components/help-chat/HelpChatWidget.tsx` | Rewritten around three views (`faq` / `browse` / `live`) with a back arrow. **Fixes the reported bug:** the question list was previously destroyed by asking anything and was unreachable thereafter. |
+| `src/client/components/AppLayout.tsx` | Wraps the app in `SupportProvider`; nav extracted to `NavBar` for the unread badge; Support Desk entry added. |
+| `src/client/App.tsx` | `/support` route, admin-only. |
+| `src/client/lib/format.ts` | `formatChatTime` — clock time today, date + time otherwise. |
+| `src/client/lib/api.ts` | `withDevUser` exported so the socket URL gets the same `?as=` handling as `fetch`. |
+| `src/server/index.ts` | Mounts `/api/support`, exports `SupportChat`. |
+| `src/server/env.ts` | `SUPPORT_CHAT` binding. |
+| `src/shared/types.ts` | Support conversation / message / presence / server-frame types. |
+| `wrangler.jsonc` | `SUPPORT_CHAT` binding + migration **`v2`**. |
+
+**Flow impact:** new [§8 Walkthrough D](#8-walkthrough-d--a-hod-asks-for-help);
+entry points table gained the SupportChat DO; §9 call graph updated. §5–§7 are
+unaffected — no board code was touched.
+
+**Verified by**
+
+| Check | Result |
+|---|---|
+| `npm test` | 34 passed |
+| `npm run typecheck` / `npm run lint` | clean |
+| `npm run build` | client + worker built; generated `wrangler.json` carries both DO bindings and migrations `v1`, `v2` |
+| Socket protocol, 20 scripted checks over two live sockets | thread creation, both-way delivery, unread counters, resolve/reopen, history ordering, presence transitions — all pass |
+| Authority | a HoD supplying someone else's `conversationId` still lands in their own thread |
+| Route guards | non-upgrade `GET` → 426; unknown user → 401; viewer → 403 |
+| Liveness | a socket that stays TCP-connected but stops pinging is closed after 109 s with `1001 No ping received`; one killed outright is dropped sooner |
+
+**Two bugs found and fixed while testing, not in the original design:**
+
+1. `broadcastPresence` depended on the runtime having already removed a
+   closing socket from `getWebSockets()` — true only because an `await`
+   happened to yield first. The closing socket is now excluded explicitly.
+2. A socket that dies without a close handshake stays registered forever, so
+   its owner shows as online indefinitely. Fixed with the heartbeat + sweep.
+   The first implementation used `setWebSocketAutoResponse`, which **looked**
+   correct and was not — see
+   [DECISION.md](DECISION.md#9-session-log) for why it was replaced.
+
+---
 
 ### Convention for future sessions
 
-When AI-assisted work **does** change code, replace this section's contents
-with, and keep appending to, entries of this shape:
+Append an entry of this shape:
 
 ```markdown
 ### <YYYY-MM-DD> — <what was built>

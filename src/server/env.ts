@@ -6,6 +6,8 @@ export interface Env {
     ASSETS: Fetcher;
     CACHE: KVNamespace;
     BOARD_LOCK: DurableObjectNamespace;
+    /** Singleton support desk — live HoD ↔ admin chat and presence. */
+    SUPPORT_CHAT: DurableObjectNamespace;
 
     // vars
     /** "true" serves fixtures and enables ?as= role impersonation. Never set in production. */

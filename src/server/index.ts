@@ -16,6 +16,7 @@ import catalogRoutes from './routes/catalog';
 import facultyRoutes from './routes/faculty';
 import checkRoutes from './routes/checks';
 import downloadRoutes from './routes/downloads';
+import supportRoutes from './routes/support';
 
 const app = new Hono<Env>();
 
@@ -33,6 +34,7 @@ app.route('/api/catalog', catalogRoutes);
 app.route('/api/faculty', facultyRoutes);
 app.route('/api/checks', checkRoutes);
 app.route('/api/downloads', downloadRoutes);
+app.route('/api/support', supportRoutes);
 
 app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404));
 
@@ -44,3 +46,4 @@ app.get('*', (c) => c.env.ASSETS.fetch(c.req.raw));
 export default app;
 
 export { BoardLock } from './durable-objects/board-lock';
+export { SupportChat } from './durable-objects/support-chat';
