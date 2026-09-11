@@ -10,46 +10,50 @@ import { Button } from '../ui/Button';
 import { ErrorState } from '../ui/states';
 
 /**
- * Inline actions for one board row. Which controls appear is driven by the
- * board's status, matching the transition table in shared/domain/board-state.
+ * Inline actions for one board row. The status-specific controls follow the
+ * transition table in shared/domain/board-state; "changes required" sits
+ * below them on every row, because the office can need a correction at any
+ * point in the workflow, not only once the board is scheduled.
  */
 export function BoardActions({ board }: { board: BoardSummary }) {
-  switch (board.status) {
-    case 'Submitted':
-      return <ApproveOrReject board={board} />;
-    case 'Approved':
-      return <OfferDates board={board} />;
-    case 'Locked':
-      return <LockedActions board={board} />;
-    default:
-      return <span className="text-sm text-slate-400">—</span>;
-  }
+  return (
+    <div className="space-y-2">
+      {board.status === 'Submitted' && <ApproveOrReject board={board} />}
+      {board.status === 'Approved' && <OfferDates board={board} />}
+      {board.status === 'Locked' && (
+        <Button variant="secondary" disabled title="Appointment emails land in Phase 5">
+          Send appointment email
+        </Button>
+      )}
+
+      <RequestChanges board={board} />
+    </div>
+  );
 }
 
-function LockedActions({ board }: { board: BoardSummary }) {
+/** Flips the flag that enables the HoD's "Changes Fixed — Notify Admin". */
+function RequestChanges({ board }: { board: BoardSummary }) {
   const requestChanges = useRequestChanges(board.boardId);
+
+  if (board.changesRequested) {
+    return (
+      <p className="text-xs font-semibold text-amber-600">
+        Changes requested — awaiting the HoD.
+      </p>
+    );
+  }
 
   return (
     <div className="space-y-2">
       {requestChanges.error && <ErrorState error={requestChanges.error} />}
 
-      <Button variant="secondary" disabled title="Appointment emails land in Phase 5">
-        Send appointment email
+      <Button
+        variant="secondary"
+        loading={requestChanges.isPending}
+        onClick={() => requestChanges.mutate({ version: board.version })}
+      >
+        Notify HoD — changes required
       </Button>
-
-      {board.changesRequested ? (
-        <p className="text-xs font-semibold text-amber-600">
-          Changes requested — awaiting the HoD.
-        </p>
-      ) : (
-        <Button
-          variant="secondary"
-          loading={requestChanges.isPending}
-          onClick={() => requestChanges.mutate({ version: board.version })}
-        >
-          Notify HoD — changes required
-        </Button>
-      )}
     </div>
   );
 }

@@ -19,9 +19,18 @@ export type BoardAction =
 
 interface Transition {
   from: BoardStatus[];
-  to: BoardStatus;
+  /** Omitted when the action only flips a flag and leaves the status alone. */
+  to?: BoardStatus;
   allowedRoles: Role[];
 }
+
+const ANY_STATUS: BoardStatus[] = [
+  'NotSubmitted',
+  'Submitted',
+  'Approved',
+  'Rejected',
+  'Locked',
+];
 
 export const TRANSITIONS: Record<BoardAction, Transition> = {
   // HoD submits, or resubmits after a rejection.
@@ -52,16 +61,15 @@ export const TRANSITIONS: Record<BoardAction, Transition> = {
     to: 'Locked',
     allowedRoles: ['hod'],
   },
-  // Post-QPSB file corrections: status stays Locked, only the flag flips —
-  // mirrors offerDates staying within Approved.
+  // Corrections the office wants from the HoD. Allowed from any status and
+  // leaves it untouched: a constitution can need fixing before it is ever
+  // approved, not only once the board is scheduled and the files are in.
   requestChanges: {
-    from: ['Locked'],
-    to: 'Locked',
+    from: ANY_STATUS,
     allowedRoles: ['admin'],
   },
   acknowledgeChanges: {
-    from: ['Locked'],
-    to: 'Locked',
+    from: ANY_STATUS,
     allowedRoles: ['hod'],
   },
   // Revokes Drive access once the QPSB session is done. Only Locked boards
@@ -92,7 +100,8 @@ export function canTransition(
   return t.allowedRoles.includes(role) && t.from.includes(from);
 }
 
-/** Throws unless the action is legal; returns the resulting status. */
+/** Throws unless the action is legal; returns the resulting status — which,
+ * for a flag-only action, is the status the board already had. */
 export function assertTransition(
   action: BoardAction,
   from: BoardStatus,
@@ -114,7 +123,7 @@ export function assertTransition(
     );
   }
 
-  return t.to;
+  return t.to ?? from;
 }
 
 export const STATUS_LABELS: Record<BoardStatus, string> = {
