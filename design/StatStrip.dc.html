@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    a { color: #0c5196; } a:hover { color: #0a3d6e; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 900px; background: #ffffff; color: #1e293b; padding: 28px 32px;">
+
+  <h2 style="margin: 0; font-size: 18px; font-weight: 700; color: #0c5196;">The counts are the filters</h2>
+  <p style="margin: 6px 0 0; font-size: 13px; color: #64748b; max-width: 640px;">
+    Today the six statuses appear twice — once as tiles, once as chips below them.
+    One control does both jobs, and breaking the equal-weight grid lets the number
+    an admin actually came for carry the page.
+  </p>
+
+  <!-- Resting state -->
+  <p style="margin: 22px 0 10px; font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.03em;">Resting — no filter applied</p>
+
+  <div style="display: flex; gap: 10px; align-items: stretch;">
+    <div style="flex: 0 0 210px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; justify-content: space-between;">
+      <div style="display: flex; align-items: center; gap: 7px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#92400e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        <span style="font-size: 12px; font-weight: 600; color: #92400e;">Needs your action</span>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 8px;">
+        <span style="font-size: 38px; font-weight: 700; color: #92400e; line-height: 1;">3</span>
+        <span style="font-size: 12px; color: #92400e;">boards waiting</span>
+      </div>
+    </div>
+
+    <div style="flex: 1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px;">
+      <sc-for list="{{tiles}}" as="t" hint-placeholder-count="5">
+        <div style="background: {{t.bg}}; border: 1px solid {{t.border}}; border-radius: 12px; padding: 11px 12px; display: flex; flex-direction: column; gap: 5px;">
+          <div style="display: flex; align-items: center; gap: 5px;">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: {{t.dot}};"></span>
+            <span style="font-size: 10px; font-weight: 600; color: {{t.fg}};">{{t.label}}</span>
+          </div>
+          <span style="font-size: 22px; font-weight: 700; color: {{t.fg}}; line-height: 1;">{{t.count}}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- Selected state -->
+  <p style="margin: 26px 0 10px; font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.03em;">Filtered — “Rejected” selected</p>
+
+  <div style="display: flex; gap: 10px; align-items: stretch;">
+    <div style="flex: 0 0 210px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; justify-content: space-between; opacity: 0.55;">
+      <div style="display: flex; align-items: center; gap: 7px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#92400e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        <span style="font-size: 12px; font-weight: 600; color: #92400e;">Needs your action</span>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 8px;">
+        <span style="font-size: 38px; font-weight: 700; color: #92400e; line-height: 1;">3</span>
+        <span style="font-size: 12px; color: #92400e;">boards waiting</span>
+      </div>
+    </div>
+
+    <div style="flex: 1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px;">
+      <sc-for list="{{selectedTiles}}" as="t" hint-placeholder-count="5">
+        <div style="background: {{t.bg}}; border: 1px solid {{t.border}}; border-radius: 12px; padding: 11px 12px; display: flex; flex-direction: column; gap: 5px; opacity: {{t.opacity}}; box-shadow: {{t.shadow}};">
+          <div style="display: flex; align-items: center; gap: 5px;">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: {{t.dot}};"></span>
+            <span style="font-size: 10px; font-weight: 600; color: {{t.fg}};">{{t.label}}</span>
+          </div>
+          <span style="font-size: 22px; font-weight: 700; color: {{t.fg}}; line-height: 1;">{{t.count}}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <p style="margin: 12px 0 0; font-size: 12px; color: #64748b;">
+    The selected tile keeps its colour and gains a ring; the rest recede rather than
+    changing colour, so the palette still reads as a status legend. Selection carries
+    <code style="background: #f1f5f9; border-radius: 4px; padding: 1px 5px; font-size: 11px;">aria-pressed</code>,
+    as the chips do today.
+  </p>
+
+  <div style="margin-top: 20px; display: flex; gap: 12px; background: #eff5fb; border: 1px solid #d6e5f4; border-radius: 10px; padding: 14px 16px;">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0a3d6e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+    <p style="margin: 0; font-size: 12px; color: #0a3d6e; line-height: 1.5;">
+      “Needs your action” is not a status — it is Submitted plus Approved-without-dates,
+      the two cases where the next move is the office’s. That is why it sits apart from
+      the five status counts rather than among them.
+    </p>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview": {"width": 900, "height": 520}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const tiles = [
+      { label: 'Total',         count: 8, bg: '#eff5fb', border: '#d6e5f4', fg: '#0a3d6e', dot: '#1a6bb8' },
+      { label: 'Not submitted', count: 2, bg: '#f1f5f9', border: '#e2e8f0', fg: '#334155', dot: '#94a3b8' },
+      { label: 'Approved',      count: 2, bg: '#ecfdf5', border: '#a7f3d0', fg: '#065f46', dot: '#059669' },
+      { label: 'Rejected',      count: 1, bg: '#fef2f2', border: '#fecaca', fg: '#991b1b', dot: '#dc2626' },
+      { label: 'Scheduled',     count: 1, bg: '#eff6ff', border: '#bfdbfe', fg: '#1e40af', dot: '#2563eb' },
+    ];
+
+    const selectedTiles = tiles.map((t) => {
+      const on = t.label === 'Rejected';
+      return {
+        ...t,
+        opacity: on ? '1' : '0.45',
+        shadow: on ? '0 0 0 2px #dc2626' : 'none',
+      };
+    });
+
+    return { tiles, selectedTiles };
+  }
+}
+</script>
+</body>
+</html>

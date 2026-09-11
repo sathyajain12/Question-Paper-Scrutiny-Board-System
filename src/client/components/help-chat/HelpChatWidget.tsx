@@ -5,21 +5,29 @@ import {
   LifeBuoy,
   List,
   Phone,
+  Plus,
   RotateCcw,
   Send,
   X,
 } from 'lucide-react';
+import type {
+  SupportBoardOption,
+  SupportConversation,
+  SupportMessage,
+} from '@shared/types';
 import { askFaq, FAQ_ENTRIES, FAQ_FALLBACK, type FaqEntry } from '@shared/constants/faq';
 import {
   isSupportPhoneConfigured,
-  MAX_SUPPORT_MESSAGE_LENGTH,
   SUPPORT_PHONE,
   supportPhoneHref,
 } from '@shared/constants/support';
 import { formatChatTime } from '@/lib/format';
+import type { PreparedImage } from '@/lib/image';
 import { useSupport } from '@/lib/support';
 import { Button } from '../ui/Button';
 import { TypingIndicator } from '../ui/TypingIndicator';
+import { MessageBubble } from '../support/MessageBubble';
+import { MessageComposer } from '../support/MessageComposer';
 
 interface ChatMessage {
   role: 'user' | 'bot';
@@ -73,33 +81,47 @@ export function HelpChatWidget() {
   const [view, setView] = useState<View>('faq');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
-  const [liveInput, setLiveInput] = useState('');
 
   const faqListRef = useRef<HTMLDivElement>(null);
   const liveListRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * Which of the HoD's threads is open. `null` shows the list; a thread only
+   * exists on the server once its first message is sent, so "New question"
+   * simply clears this and lets the composer create one.
+   */
+  const [threadId, setThreadId] = useState<string | null>(null);
+  /**
+   * Set when a message is sent with no thread open. The server mints the id,
+   * so the widget adopts whichever thread comes back at the top of the list
+   * rather than guessing one.
+   */
+  const awaitingNewThread = useRef(false);
+  /** True while writing a question that has no thread on the server yet. */
+  const [composingNew, setComposingNew] = useState(false);
+
   const support = useSupport();
   const {
     presence,
-    conversation,
+    conversations,
     messagesByConversation,
     typingByConversation,
+    boards,
+    setBoard,
     status,
     error,
     send,
     notifyTyping,
     markRead,
+    requestHistory,
     clearError,
   } = support;
 
-  const liveMessages = conversation
-    ? (messagesByConversation[conversation.conversationId] ?? [])
-    : [];
-  // Only ever one thread for a HoD, so it is keyed by their own conversation.
-  const typingPeer = conversation
-    ? typingByConversation[conversation.conversationId]
-    : undefined;
-  const unread = conversation?.unreadForHod ?? 0;
+  const conversation = conversations.find((c) => c.conversationId === threadId);
+  const liveMessages = threadId ? (messagesByConversation[threadId] ?? []) : [];
+  const typingPeer = threadId ? typingByConversation[threadId] : undefined;
+  /** Across every thread, so the launcher badge counts them all. */
+  const unread = conversations.reduce((n, c) => n + c.unreadForHod, 0);
   const adminOnline = presence.adminsOnline > 0;
 
   const categories = useMemo(groupByCategory, []);
@@ -119,6 +141,23 @@ export function HelpChatWidget() {
       behavior: 'smooth',
     });
   }, [liveMessages.length, view, typingPeer]);
+
+  // Opening a thread pulls its transcript — the list arrives without one, so
+  // a HoD with a dozen past questions is not sent a dozen transcripts.
+  useEffect(() => {
+    if (threadId) requestHistory(threadId);
+  }, [threadId, requestHistory]);
+
+  // The list is sorted by most recent activity, so the thread we just started
+  // is the one at the top.
+  useEffect(() => {
+    if (!awaitingNewThread.current) return;
+    const newest = conversations[0];
+    if (!newest) return;
+    awaitingNewThread.current = false;
+    setComposingNew(false);
+    setThreadId(newest.conversationId);
+  }, [conversations]);
 
   // Reading the thread is what clears it — so the badge reflects "you haven't
   // looked", not "the server hasn't tried".
@@ -154,20 +193,12 @@ export function HelpChatWidget() {
     ask(input);
   }
 
-  function handleLiveSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const text = liveInput.trim();
-    if (!text) return;
-    clearError();
-    send(text);
-    setLiveInput('');
-  }
-
   const headings: Record<View, { title: string; subtitle: string }> = {
     faq: { title: 'QPSB Help', subtitle: 'Ask a question about the portal' },
     browse: { title: 'All questions', subtitle: 'Pick any question to see its answer' },
     live: {
-      title: 'Chat with the COE office',
+      // The reference is the thing a HoD can quote if they end up phoning.
+      title: conversation ? conversation.reference : 'Chat with the COE office',
       subtitle: adminOnline
         ? `${presence.adminsOnline} ${presence.adminsOnline === 1 ? 'person' : 'people'} online`
         : 'No one is online right now',
@@ -204,8 +235,18 @@ export function HelpChatWidget() {
             {view !== 'faq' && (
               <button
                 type="button"
-                onClick={() => setView('faq')}
-                aria-label="Back to help"
+                onClick={() => {
+                  // Inside a thread, back means the thread list — only leave
+                  // the live view when there is no list to go back to.
+                  const inThread = threadId !== null || composingNew;
+                  if (view === 'live' && inThread && conversations.length > 0) {
+                    setThreadId(null);
+                    setComposingNew(false);
+                    return;
+                  }
+                  setView('faq');
+                }}
+                aria-label="Back"
                 className="rounded-md p-1 text-white transition hover:bg-brand-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <ChevronLeft className="h-5 w-5" aria-hidden="true" />
@@ -254,13 +295,30 @@ export function HelpChatWidget() {
               status={status}
               error={error}
               messages={liveMessages}
-              typingName={typingPeer?.name}
-              input={liveInput}
-              onInput={(value) => {
-                setLiveInput(value);
-                if (value.trim()) notifyTyping();
+              conversation={conversation}
+              conversations={conversations}
+              showList={!threadId && !composingNew && conversations.length > 0}
+              onOpenThread={(id) => {
+                setComposingNew(false);
+                setThreadId(id);
               }}
-              onSubmit={handleLiveSubmit}
+              onNewThread={() => {
+                setThreadId(null);
+                setComposingNew(true);
+              }}
+              boards={boards}
+              onSetBoard={(boardId) => {
+                if (threadId) setBoard(threadId, boardId);
+              }}
+              typingName={typingPeer?.name}
+              onTyping={() => notifyTyping(threadId ?? undefined)}
+              onSend={(text, image) => {
+                clearError();
+                // No thread selected means this opens a new one; the server
+                // creates it and the echo tells us which id it got.
+                if (!threadId) awaitingNewThread.current = true;
+                send(text, threadId ?? undefined, image);
+              }}
             />
           )}
 
@@ -420,6 +478,79 @@ function BrowseView({
   );
 }
 
+/**
+ * A HoD's own threads.
+ *
+ * This list is the point of the change: a thread per question, rather than
+ * every question a HoD ever asks piling into one transcript that can only be
+ * resolved as a whole. The reference is shown because it is the thing they
+ * can quote on the phone.
+ */
+function ThreadList({
+  conversations,
+  onOpen,
+  onNew,
+}: {
+  conversations: SupportConversation[];
+  onOpen: (id: string) => void;
+  onNew: () => void;
+}) {
+  return (
+    <>
+      <ul className="flex-1 divide-y divide-slate-100 overflow-y-auto">
+        {conversations.map((c) => (
+          <li key={c.conversationId}>
+            <button
+              type="button"
+              onClick={() => onOpen(c.conversationId)}
+              className="w-full px-4 py-3 text-left transition hover:bg-slate-50"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="truncate text-sm font-semibold text-slate-800">
+                  {c.subject}
+                </span>
+                {c.unreadForHod > 0 && (
+                  <span
+                    aria-label={`${c.unreadForHod} unread`}
+                    className="shrink-0 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white"
+                  >
+                    {c.unreadForHod}
+                  </span>
+                )}
+              </div>
+
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+                <span className="font-mono font-semibold text-slate-400">
+                  {c.reference}
+                </span>
+                <span>{formatChatTime(c.lastMessageAt)}</span>
+                {c.status === 'resolved' && (
+                  <span className="rounded-full bg-emerald-50 px-1.5 font-semibold text-emerald-700">
+                    Resolved
+                  </span>
+                )}
+              </p>
+
+              {c.boardProgramme && (
+                <p className="mt-1 truncate text-xs text-brand-700">
+                  {c.boardProgramme}
+                </p>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <div className="border-t border-slate-200 px-3 py-3">
+        <Button className="w-full justify-center" onClick={onNew}>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          New question
+        </Button>
+      </div>
+    </>
+  );
+}
+
 function LiveView({
   listRef,
   adminOnline,
@@ -427,33 +558,69 @@ function LiveView({
   status,
   error,
   messages,
+  conversation,
+  conversations,
+  showList,
+  onOpenThread,
+  onNewThread,
+  boards,
+  onSetBoard,
   typingName,
-  input,
-  onInput,
-  onSubmit,
+  onSend,
+  onTyping,
 }: {
   listRef: React.RefObject<HTMLDivElement | null>;
   adminOnline: boolean;
   adminNames: string[];
   status: 'connecting' | 'online' | 'offline';
   error: string | null;
-  messages: {
-    id: string;
-    authorName: string;
-    authorRole: string;
-    text: string;
-    sentAt: string;
-  }[];
+  messages: SupportMessage[];
+  conversation: SupportConversation | undefined;
+  conversations: SupportConversation[];
+  showList: boolean;
+  onOpenThread: (id: string) => void;
+  onNewThread: () => void;
+  boards: SupportBoardOption[];
+  onSetBoard: (boardId: string | null) => void;
   typingName: string | undefined;
-  input: string;
-  onInput: (value: string) => void;
-  onSubmit: (e: React.FormEvent) => void;
+  onSend: (text: string, image?: PreparedImage) => void;
+  onTyping: () => void;
 }) {
   const phoneConfigured = isSupportPhoneConfigured();
-  const overLimit = input.length > MAX_SUPPORT_MESSAGE_LENGTH;
+
+  if (showList) {
+    return (
+      <ThreadList
+        conversations={conversations}
+        onOpen={onOpenThread}
+        onNew={onNewThread}
+      />
+    );
+  }
 
   return (
     <>
+      {/* Saves the office its first question, which is almost always
+          "which programme?". Only offered once a thread exists — there is
+          nothing to attach it to before that. */}
+      {boards.length > 0 && conversation && (
+        <label className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <span className="shrink-0 font-semibold">About</span>
+          <select
+            value={conversation.boardId ?? ''}
+            onChange={(e) => onSetBoard(e.target.value || null)}
+            className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
+          >
+            <option value="">No particular programme</option>
+            {boards.map((b) => (
+              <option key={b.boardId} value={b.boardId}>
+                {b.programme}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {/* The offline path the phone number exists for. It stays visible
             above the transcript rather than replacing it, so a HoD can still
@@ -503,31 +670,15 @@ function LiveView({
           </p>
         )}
 
-        {messages.map((m) => {
-          const mine = m.authorRole === 'hod';
-          return (
-            <div
-              key={m.id}
-              className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}
-            >
-              {!mine && (
-                <p className="mb-0.5 text-xs font-semibold text-slate-500">
-                  {m.authorName}
-                </p>
-              )}
-              <p
-                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
-                  mine ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-800'
-                }`}
-              >
-                {m.text}
-              </p>
-              <p className="mt-0.5 text-[10px] text-slate-400">
-                {formatChatTime(m.sentAt)}
-              </p>
-            </div>
-          );
-        })}
+        {messages.map((m) => (
+          <MessageBubble
+            key={m.id}
+            message={m}
+            conversation={conversation}
+            mine={m.authorRole === 'hod'}
+            showAuthor
+          />
+        ))}
 
         {typingName && <TypingIndicator name={typingName} />}
       </div>
@@ -544,38 +695,12 @@ function LiveView({
         </p>
       )}
 
-      <form
-        onSubmit={onSubmit}
-        className="flex items-end gap-2 border-t border-slate-200 px-3 py-3"
-      >
-        <div className="flex-1">
-          <textarea
-            value={input}
-            onChange={(e) => onInput(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter sends; Shift+Enter is a newline — the convention every
-              // chat app has trained people on.
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                e.currentTarget.form?.requestSubmit();
-              }
-            }}
-            rows={2}
-            placeholder="Describe your issue…"
-            aria-label="Message the COE office"
-            className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
-          />
-          {overLimit && (
-            <p className="mt-1 text-xs text-red-600">
-              {input.length} / {MAX_SUPPORT_MESSAGE_LENGTH} characters.
-            </p>
-          )}
-        </div>
-        <Button type="submit" disabled={!input.trim() || overLimit || status !== 'online'}>
-          <Send className="h-4 w-4" aria-hidden="true" />
-          <span className="sr-only">Send</span>
-        </Button>
-      </form>
+      <MessageComposer
+        placeholder="Describe your issue…"
+        disabled={status !== 'online'}
+        onSend={onSend}
+        onTyping={onTyping}
+      />
     </>
   );
 }

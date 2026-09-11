@@ -23,6 +23,8 @@ import {
 import type {
   Role,
   SessionUser,
+  SupportBoardOption,
+  SupportCategory,
   SupportConversation,
   SupportMessage,
   SupportPresence,
@@ -31,6 +33,7 @@ import type {
 import type { SupportClientFrame } from '@shared/schemas/support';
 import { TYPING_THROTTLE_MS, TYPING_TTL_MS } from '@shared/constants/support';
 import { withDevUser } from './api';
+import type { PreparedImage } from './image';
 
 /** Who is currently typing in a conversation, as far as this client knows. */
 export interface TypingPeer {
@@ -43,21 +46,34 @@ export type SupportStatus = 'connecting' | 'online' | 'offline';
 interface SupportContextValue {
   status: SupportStatus;
   presence: SupportPresence;
-  /** HoD: their own thread. Undefined until they send the first message. */
-  conversation: SupportConversation | undefined;
-  /** Admin: every thread, most recent activity first. */
+  /**
+   * Every thread this viewer may see, most recent activity first — all of
+   * them for an admin, their own for a HoD. A HoD can have several now: each
+   * question is its own thread rather than everything landing in one.
+   */
   conversations: SupportConversation[];
-  /** Keyed by conversationId. The HoD only ever holds their own. */
+  /** Keyed by conversationId; filled in as threads are opened. */
   messagesByConversation: Record<string, SupportMessage[]>;
   /** Keyed by conversationId; absent once the TTL lapses. */
   typingByConversation: Record<string, TypingPeer>;
+  /** Image bytes, keyed by image id, filled in as they are requested. */
+  imagesById: Record<string, string>;
+  /** Ask for one image's bytes; safe to call repeatedly. */
+  requestImage: (imageId: string) => void;
+  /** HoD only: the programmes they may attach to a thread. */
+  boards: SupportBoardOption[];
+  /** HoD only: name the board a thread is about, or null to clear it. */
+  setBoard: (conversationId: string, boardId: string | null) => void;
+  /** Admin only, irreversible. */
+  deleteConversation: (conversationId: string) => void;
   /** Last rejection from the server — a too-long message, a stale thread. */
   error: string | null;
-  send: (text: string, conversationId?: string) => void;
+  send: (text: string, conversationId?: string, image?: PreparedImage) => void;
   /** Call on every keystroke — throttling happens here, not at the call site. */
   notifyTyping: (conversationId?: string) => void;
   markRead: (conversationId: string) => void;
-  resolve: (conversationId: string) => void;
+  /** Admin only. The category is what the thread turned out to be about. */
+  resolve: (conversationId: string, category: SupportCategory) => void;
   requestHistory: (conversationId: string) => void;
   clearError: () => void;
 }
@@ -65,10 +81,14 @@ interface SupportContextValue {
 const FALLBACK: SupportContextValue = {
   status: 'offline',
   presence: { adminsOnline: 0, adminNames: [] },
-  conversation: undefined,
   conversations: [],
   messagesByConversation: {},
   typingByConversation: {},
+  imagesById: {},
+  requestImage: () => {},
+  boards: [],
+  setBoard: () => {},
+  deleteConversation: () => {},
   error: null,
   send: () => {},
   notifyTyping: () => {},
@@ -115,13 +135,16 @@ export function SupportProvider({
     adminsOnline: 0,
     adminNames: [],
   });
-  const [conversation, setConversation] = useState<SupportConversation>();
   const [conversations, setConversations] = useState<SupportConversation[]>([]);
   const [messagesByConversation, setMessages] = useState<
     Record<string, SupportMessage[]>
   >({});
   const [typingByConversation, setTyping] = useState<Record<string, TypingPeer>>({});
+  const [imagesById, setImages] = useState<Record<string, string>>({});
+  const [boards, setBoards] = useState<SupportBoardOption[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** Ids already asked for, so a re-render does not re-request every picture. */
+  const requestedImages = useRef<Set<string>>(new Set());
 
   const socketRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
@@ -170,12 +193,8 @@ export function SupportProvider({
       switch (frame.type) {
         case 'init':
           setPresence(frame.presence);
-          if (frame.conversations) setConversations(frame.conversations);
-          if (frame.conversation) setConversation(frame.conversation);
-          if (frame.messages && frame.conversation) {
-            const id = frame.conversation.conversationId;
-            setMessages((prev) => ({ ...prev, [id]: frame.messages ?? [] }));
-          }
+          if (frame.boards) setBoards(frame.boards);
+          setConversations(frame.conversations);
           return;
 
         case 'presence':
@@ -192,7 +211,6 @@ export function SupportProvider({
             return { ...prev, [id]: [...existing, frame.message] };
           });
           upsertConversation(frame.conversation);
-          if (!isAdmin) setConversation(frame.conversation);
           // The message *is* the end of typing — don't make the reader watch
           // a stale indicator hang around under text that has already landed.
           clearTyping(id);
@@ -220,11 +238,30 @@ export function SupportProvider({
 
         case 'conversation':
           upsertConversation(frame.conversation);
-          if (!isAdmin) setConversation(frame.conversation);
           return;
 
         case 'history':
           setMessages((prev) => ({ ...prev, [frame.conversationId]: frame.messages }));
+          return;
+
+        case 'deleted': {
+          const id = frame.conversationId;
+          setConversations((prev) => prev.filter((c) => c.conversationId !== id));
+          setMessages((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+          clearTyping(id);
+          return;
+        }
+
+        case 'image':
+          // A pruned image answers null; remember that so we stop asking.
+          requestedImages.current.add(frame.imageId);
+          if (frame.dataUrl) {
+            setImages((prev) => ({ ...prev, [frame.imageId]: frame.dataUrl! }));
+          }
           return;
 
         case 'error':
@@ -309,12 +346,22 @@ export function SupportProvider({
   }, []);
 
   const send = useCallback(
-    (text: string, conversationId?: string) => {
+    (text: string, conversationId?: string, image?: PreparedImage) => {
       const trimmed = text.trim();
-      if (!trimmed) return;
-      if (!post({ type: 'send', conversationId, text: trimmed })) {
+      if (!trimmed && !image) return;
+      if (!post({ type: 'send', conversationId, text: trimmed, image })) {
         setError('Not connected — your message was not sent. Retrying…');
       }
+    },
+    [post],
+  );
+
+  const requestImage = useCallback(
+    (imageId: string) => {
+      if (requestedImages.current.has(imageId)) return;
+      // Claim it before the round trip, so a burst of renders asks once.
+      requestedImages.current.add(imageId);
+      if (!post({ type: 'image', imageId })) requestedImages.current.delete(imageId);
     },
     [post],
   );
@@ -338,13 +385,25 @@ export function SupportProvider({
     [post],
   );
 
+  const setBoard = useCallback(
+    (conversationId: string, boardId: string | null) =>
+      void post({ type: 'setBoard', conversationId, boardId }),
+    [post],
+  );
+
+  const deleteConversation = useCallback(
+    (conversationId: string) => void post({ type: 'delete', conversationId }),
+    [post],
+  );
+
   const markRead = useCallback(
     (conversationId: string) => void post({ type: 'markRead', conversationId }),
     [post],
   );
 
   const resolve = useCallback(
-    (conversationId: string) => void post({ type: 'resolve', conversationId }),
+    (conversationId: string, category: SupportCategory) =>
+      void post({ type: 'resolve', conversationId, category }),
     [post],
   );
 
@@ -359,10 +418,14 @@ export function SupportProvider({
     () => ({
       status,
       presence,
-      conversation,
       conversations,
       messagesByConversation,
       typingByConversation,
+      imagesById,
+      requestImage,
+      boards,
+      setBoard,
+      deleteConversation,
       error,
       send,
       notifyTyping,
@@ -374,10 +437,14 @@ export function SupportProvider({
     [
       status,
       presence,
-      conversation,
       conversations,
       messagesByConversation,
       typingByConversation,
+      imagesById,
+      requestImage,
+      boards,
+      setBoard,
+      deleteConversation,
       error,
       send,
       notifyTyping,

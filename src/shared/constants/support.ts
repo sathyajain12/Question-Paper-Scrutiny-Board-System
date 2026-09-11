@@ -46,6 +46,80 @@ export const TYPING_TTL_MS = 4000;
 export const TYPING_THROTTLE_MS = 2000;
 
 /**
+ * Image attachments.
+ *
+ * Pictures are downscaled and re-encoded in the browser before they are sent,
+ * because a Durable Object storage value has a hard ceiling and a phone photo
+ * is an order of magnitude past it. `MAX_IMAGE_BYTES` is the budget the
+ * client compresses *towards* and the server enforces; `MAX_IMAGE_EDGE` is
+ * the longest side we keep, which is ample for a screenshot of the portal —
+ * the thing HoDs will actually send.
+ *
+ * At production scale these belong in R2 with the message holding a key. This
+ * keeps them in the object with everything else, which needs no new
+ * infrastructure and is honest about its limit.
+ */
+export const MAX_IMAGE_EDGE = 1280;
+export const MAX_IMAGE_BYTES = 96 * 1024;
+/** Base64 inflates by ~4/3; the wire value must still fit a storage write. */
+export const MAX_IMAGE_DATA_URL_LENGTH = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 256;
+
+export const ACCEPTED_IMAGE_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+] as const;
+
+/**
+ * How long a HoD's message may sit unanswered, with no administrator
+ * connected, before the office is emailed about it.
+ *
+ * The desk is only trustworthy if it reaches someone when nobody is watching
+ * it — otherwise a message written at 9pm simply waits for whenever an admin
+ * next signs in. The delay exists so an admin who is about to log in anyway
+ * is not emailed about something they are seconds from seeing.
+ */
+export const NOTIFY_OFFICE_AFTER_MS = 5 * 60_000;
+
+/**
+ * Don't email the office about the same thread more often than this, however
+ * many messages arrive — a HoD typing five lines in a row is one problem, not
+ * five.
+ */
+export const NOTIFY_OFFICE_COOLDOWN_MS = 60 * 60_000;
+
+/**
+ * What a thread turned out to be about, chosen by the **administrator** when
+ * they resolve it — never by the HoD when they open it.
+ *
+ * That asymmetry is the whole point. Asking a HoD to categorise a problem
+ * before describing it is the ceremony that makes people phone instead, and
+ * they are guessing anyway. The admin knows what it actually was once it is
+ * answered, and by then it costs one dropdown.
+ *
+ * The value is the report, not the label: "we answered the same faculty-list
+ * question thirty times this term" is the sentence that tells you what to fix
+ * in the portal or the FAQ.
+ */
+export const SUPPORT_CATEGORIES = [
+  'Faculty list',
+  'Scheduling',
+  'Files or Drive',
+  'Access or sign-in',
+  'Board status',
+  'Something else',
+] as const;
+
+/** Prefix for the human-quotable thread reference, e.g. QPSB-104. */
+export const SUPPORT_REFERENCE_PREFIX = 'QPSB';
+/** References start here so the first one does not read as a test. */
+export const SUPPORT_REFERENCE_START = 100;
+
+/** A thread's title is taken from its opening message rather than a form. */
+export const MAX_SUBJECT_LENGTH = 80;
+
+/**
  * The desk is a single Durable Object instance — every HoD and every admin
  * connects to the same one, which is what makes presence a fact rather than
  * a guess assembled from heartbeats.

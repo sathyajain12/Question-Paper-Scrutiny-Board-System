@@ -43,8 +43,14 @@ export function resetMockData(): void {
 }
 
 function toSummary(b: BoardDetail): BoardSummary {
-  const { boardId, degree, degreeShort, department, programme, status, courseCount, submittedBy, submittedAt, version } = b;
-  return { boardId, degree, degreeShort, department, programme, status, courseCount, submittedBy, submittedAt, version };
+  const { boardId, degree, degreeShort, department, programme, status, courseCount, submittedBy, submittedAt, members, availableDates, sessionTime, changesRequested, closed, version } = b;
+  return {
+    boardId, degree, degreeShort, department, programme, status, courseCount,
+    submittedBy, submittedAt, sessionTime, changesRequested, closed, version,
+    // Cloned so a caller mutating the summary cannot reach into the board.
+    members: [...members],
+    availableDates: availableDates.map((d) => ({ ...d })),
+  };
 }
 
 function visibleTo(user: SessionUser): BoardDetail[] {

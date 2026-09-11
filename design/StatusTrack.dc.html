@@ -1,0 +1,142 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    a { color: #0c5196; } a:hover { color: #0a3d6e; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 900px; background: #ffffff; color: #1e293b; padding: 28px 32px;">
+
+  <h2 style="margin: 0; font-size: 18px; font-weight: 700; color: #0c5196;">Direction 2 — status as a track</h2>
+  <p style="margin: 6px 0 0; font-size: 13px; color: #64748b; max-width: 620px;">
+    The lifecycle is linear, so show position rather than a word. Three segments:
+    Submitted → Approved → Scheduled. Colour and label stay paired, so the badge
+    still survives greyscale and colour-blindness.
+  </p>
+
+  <!-- The five states, stacked so the fill level reads as a column -->
+  <div style="margin-top: 24px; border-radius: 8px; outline: 1px solid #e2e8f0; outline-offset: -1px; overflow: hidden;">
+    <div style="display: grid; grid-template-columns: 150px 230px 1fr; gap: 0; background: #f8fafc; font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.03em;">
+      <span style="padding: 9px 14px;">State</span>
+      <span style="padding: 9px 14px;">Track</span>
+      <span style="padding: 9px 14px;">What it tells the admin</span>
+    </div>
+
+    <sc-for list="{{states}}" as="s" hint-placeholder-count="5">
+      <div style="display: grid; grid-template-columns: 150px 230px 1fr; gap: 0; border-top: 1px solid #f1f5f9; align-items: center;">
+        <div style="padding: 12px 14px;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; border-radius: 9999px; padding: 3px 10px; font-size: 11px; font-weight: 600; background: {{s.bg}}; color: {{s.fg}}; outline: 1px solid {{s.border}}; outline-offset: -1px;">{{s.label}}</span>
+        </div>
+
+        <div style="padding: 12px 14px; display: flex; gap: 3px; align-items: center;">
+          <sc-for list="{{s.track}}" as="seg" hint-placeholder-count="3">
+            <span style="width: 40px; height: 5px; border-radius: 9999px; background: {{seg.color}};"></span>
+          </sc-for>
+        </div>
+
+        <div style="padding: 12px 14px; font-size: 12px; color: #475569;">{{s.meaning}}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- Why Rejected is the interesting case -->
+  <div style="margin-top: 22px; display: flex; gap: 14px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 14px 16px;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#991b1b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="10"></circle><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path></svg>
+    <p style="margin: 0; font-size: 12px; color: #991b1b; line-height: 1.5;">
+      <strong style="font-weight: 700;">Rejected reads as “went backwards”.</strong>
+      It holds one filled segment like Submitted, but tinted red and with the
+      remaining track broken rather than grey — so a scan down the column shows
+      not just how far each board got, but which one fell back.
+    </p>
+  </div>
+
+  <!-- In context -->
+  <p style="margin: 24px 0 10px; font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.03em;">In a row</p>
+
+  <div style="border-radius: 8px; outline: 1px solid #e2e8f0; outline-offset: -1px; overflow: hidden;">
+    <sc-for list="{{rows}}" as="r" hint-placeholder-count="3">
+      <div style="display: grid; grid-template-columns: 1fr 230px 150px; gap: 0; border-top: 1px solid #f1f5f9; align-items: center; background: #ffffff;">
+        <div style="padding: 11px 14px; display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 14px; font-weight: 600; color: #0c5196;">{{r.programme}}</span>
+          <span style="font-size: 12px; color: #64748b;">{{r.department}}</span>
+        </div>
+        <div style="padding: 11px 14px; display: flex; flex-direction: column; gap: 5px;">
+          <div style="display: flex; gap: 3px; align-items: center;">
+            <sc-for list="{{r.track}}" as="seg" hint-placeholder-count="3">
+              <span style="width: 34px; height: 5px; border-radius: 9999px; background: {{seg.color}};"></span>
+            </sc-for>
+            <span style="margin-left: 6px; font-size: 12px; font-weight: 600; color: {{r.fg}};">{{r.label}}</span>
+          </div>
+          <span style="font-size: 11px; color: #94a3b8;">{{r.hint}}</span>
+        </div>
+        <div style="padding: 11px 14px; text-align: right;">
+          <span style="display: inline-flex; align-items: center; gap: 5px; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 600; color: #0c5196; outline: 1px solid #d6e5f4; outline-offset: -1px;">Review</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview": {"width": 900, "height": 620}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const GREY = '#e2e8f0';
+    const seg = (colors) => colors.map((c) => ({ color: c }));
+
+    const states = [
+      {
+        label: 'Not Submitted', bg: '#f1f5f9', fg: '#334155', border: '#e2e8f0',
+        track: seg([GREY, GREY, GREY]),
+        meaning: 'Nothing has happened yet — the HoD has not constituted this board.',
+      },
+      {
+        label: 'Submitted', bg: '#fffbeb', fg: '#92400e', border: '#fde68a',
+        track: seg(['#d97706', GREY, GREY]),
+        meaning: 'One step in, and the next step is yours: approve or reject.',
+      },
+      {
+        label: 'Approved', bg: '#ecfdf5', fg: '#065f46', border: '#a7f3d0',
+        track: seg(['#059669', '#059669', GREY]),
+        meaning: 'Two of three. Either you still owe dates, or the HoD owes a choice.',
+      },
+      {
+        label: 'Scheduled', bg: '#eff6ff', fg: '#1e40af', border: '#bfdbfe',
+        track: seg(['#2563eb', '#2563eb', '#2563eb']),
+        meaning: 'Complete — date and time are fixed. Nothing further on this tab.',
+      },
+      {
+        label: 'Rejected', bg: '#fef2f2', fg: '#991b1b', border: '#fecaca',
+        track: seg(['#dc2626', '#fecaca', GREY]),
+        meaning: 'Sent back to the HoD. Reads as a step lost, not a step gained.',
+      },
+    ];
+
+    const rows = [
+      { programme: 'M.Sc. Physics', department: 'Physics',
+        track: seg(['#d97706', GREY, GREY]), fg: '#92400e',
+        label: 'Submitted', hint: 'Awaiting your approval' },
+      { programme: 'M.Tech. Computer Science', department: 'Computer Science',
+        track: seg(['#059669', '#059669', GREY]), fg: '#065f46',
+        label: 'Approved', hint: 'Dates offered — with the HoD' },
+      { programme: 'M.Sc. Chemistry', department: 'Chemistry',
+        track: seg(['#dc2626', '#fecaca', GREY]), fg: '#991b1b',
+        label: 'Rejected', hint: 'Sent back — with the HoD' },
+    ];
+
+    return { states, rows };
+  }
+}
+</script>
+</body>
+</html>

@@ -9,6 +9,7 @@
  */
 import { Hono } from 'hono';
 import type { Env } from '../env';
+import { getRepo } from '../repositories';
 import {
   SUPPORT_DESK_ID,
   SUPPORT_USER_HEADER,
@@ -29,11 +30,24 @@ support.get('/ws', async (c) => {
     return c.json({ error: 'The support desk is for HoDs and administrators.' }, 403);
   }
 
+  // The Durable Object has no repository, so it cannot check that a board a
+  // HoD names is actually theirs. Resolving the list here — from the session,
+  // through the same role-scoped `listBoards` the rest of the app uses — is
+  // what gives the object something trustworthy to validate against.
+  const boards =
+    user.role === 'hod'
+      ? (await (await getRepo(c.env)).listBoards(user)).map((b) => ({
+          boardId: b.boardId,
+          programme: b.programme,
+        }))
+      : undefined;
+
   const identity: SupportSocketUser = {
     email: user.email,
     name: user.name,
     role: user.role,
     departments: user.departments,
+    ...(boards ? { boards } : {}),
   };
 
   const headers = new Headers(c.req.raw.headers);

@@ -2,6 +2,7 @@
  * Types shared by the React client and the Cloudflare Worker.
  * Keep this file free of any runtime imports so both bundles stay small.
  */
+import type { SUPPORT_CATEGORIES } from './constants/support';
 
 export type Role = 'admin' | 'hod' | 'viewer';
 
@@ -93,24 +94,28 @@ export interface BoardSummary {
   courseCount: number;
   submittedBy: string | null;
   submittedAt: string | null;
+  /**
+   * Carried on the list so the admin table and action queue can render a
+   * whole page from one request. Without these the admin screen fetched
+   * every board's detail individually — one request per row.
+   */
+  members: FacultyMember[];
+  availableDates: BoardDate[];
+  sessionTime: string | null;
+  /** Set when the admin flags the post-QPSB files for correction. */
+  changesRequested: boolean;
+  /** Set once the admin closes the board after the session. Irreversible. */
+  closed: boolean;
   /** Optimistic-concurrency token — echo back on every mutation. See §7. */
   version: number;
 }
 
 export interface BoardDetail extends BoardSummary {
   chairperson: FacultyMember | null;
-  members: FacultyMember[];
   courses: Course[];
-  availableDates: BoardDate[];
-  /** Single start time applied to all selected dates, e.g. "9:30 AM". */
-  sessionTime: string | null;
   actionBy: string | null;
   actionAt: string | null;
   rejectionReason: string | null;
-  /** Set when the admin flags the post-QPSB files for correction; cleared when the HoD acknowledges the fix. */
-  changesRequested: boolean;
-  /** Set once the admin closes the board after the QPSB session — revokes Drive access. Irreversible. */
-  closed: boolean;
 }
 
 export interface DashboardCounts {
@@ -130,6 +135,17 @@ export interface DashboardCounts {
 
 export type SupportConversationStatus = 'open' | 'resolved';
 
+/**
+ * An image attached to a message. The bytes live under their own storage key
+ * and are fetched on demand — a transcript of 200 messages must not drag
+ * every picture ever sent along with it.
+ */
+export interface SupportImage {
+  id: string;
+  width: number;
+  height: number;
+}
+
 export interface SupportMessage {
   id: string;
   conversationId: string;
@@ -137,13 +153,30 @@ export interface SupportMessage {
   authorName: string;
   authorRole: Role;
   text: string;
+  image?: SupportImage;
   /** ISO timestamp, set by the server — never trust a client clock. */
   sentAt: string;
 }
 
+export type SupportCategory = (typeof SUPPORT_CATEGORIES)[number];
+
 export interface SupportConversation {
-  /** The HoD's lower-cased email. */
+  /**
+   * Opaque and per-thread — deliberately **not** the HoD's email any more.
+   *
+   * Keying by email gave each HoD exactly one thread, so two unrelated
+   * problems (a wrong faculty list and a failing upload) interleaved in one
+   * transcript that could only be resolved as a whole. This is the one place
+   * the chat model genuinely broke down, and an id per thread is the fix.
+   */
   conversationId: string;
+  /** Short, quotable on the phone: QPSB-104. */
+  reference: string;
+  /** Taken from the opening message — a title without asking for one. */
+  subject: string;
+  /** Set by the administrator when resolving. Drives the themes report. */
+  category: SupportCategory | null;
+  resolvedAt: string | null;
   hodEmail: string;
   hodName: string;
   departments: string[];
@@ -155,7 +188,49 @@ export interface SupportConversation {
   unreadForAdmin: number;
   /** Replies from an administrator this HoD has not seen yet. */
   unreadForHod: number;
+
+  /**
+   * Receipt watermarks, as ISO timestamps.
+   *
+   * Rather than a flag per message — which would mean rewriting a whole
+   * transcript every time someone opens it — each side records how far it has
+   * got. A message counts as delivered when the *recipient's* `DeliveredAt`
+   * is at or past its `sentAt`, and read when their `ReadAt` is. Both only
+   * move forward, so the comparison is stable.
+   */
+  hodDeliveredAt: string | null;
+  hodReadAt: string | null;
+  adminDeliveredAt: string | null;
+  adminReadAt: string | null;
+
+  /**
+   * The board this thread is about, if the HoD named one.
+   *
+   * Nearly every conversation starts with the office asking "which
+   * programme?" — the portal already knows the HoD's boards, so it can carry
+   * the answer instead. The programme is stored alongside the id so the admin
+   * screen can label the thread without a second lookup.
+   */
+  boardId: string | null;
+  boardProgramme: string | null;
+
+  /**
+   * When the office should be emailed if this is still unanswered. Set when a
+   * HoD writes with no administrator connected; cleared once one reads it.
+   */
+  notifyDueAt: string | null;
+  /** Last time an email actually went out, for the cooldown. */
+  notifiedAt: string | null;
 }
+
+/** A board a HoD may attach to their thread — resolved server-side at connect. */
+export interface SupportBoardOption {
+  boardId: string;
+  programme: string;
+}
+
+/** What the sender's ticks show. */
+export type SupportReceipt = 'sent' | 'delivered' | 'read';
 
 /**
  * Derived from live socket connections, not from a heartbeat table — an
@@ -172,16 +247,23 @@ export type SupportServerFrame =
   | {
       type: 'init';
       presence: SupportPresence;
-      /** Present for a HoD: their own thread. */
-      conversation?: SupportConversation;
-      messages?: SupportMessage[];
-      /** Present for an administrator: every thread, newest activity first. */
-      conversations?: SupportConversation[];
+      /**
+       * Every thread the viewer may see, newest activity first — all of them
+       * for an administrator, only their own for a HoD. Transcripts are
+       * fetched per thread on open rather than shipped with the list.
+       */
+      conversations: SupportConversation[];
+      /** Present for a HoD: the boards they may attach to a thread. */
+      boards?: SupportBoardOption[];
     }
+  /** A thread was deleted by an administrator; drop it everywhere. */
+  | { type: 'deleted'; conversationId: string }
   | { type: 'presence'; presence: SupportPresence }
   | { type: 'message'; message: SupportMessage; conversation: SupportConversation }
   | { type: 'conversation'; conversation: SupportConversation }
   | { type: 'history'; conversationId: string; messages: SupportMessage[] }
+  /** Image bytes, answered on demand. `dataUrl` is null if it has been pruned. */
+  | { type: 'image'; imageId: string; dataUrl: string | null }
   | {
       type: 'typing';
       conversationId: string;

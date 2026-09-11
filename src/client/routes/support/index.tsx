@@ -8,14 +8,17 @@
  * falls back from.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Inbox, Send } from 'lucide-react';
-import type { SupportConversation } from '@shared/types';
-import { MAX_SUPPORT_MESSAGE_LENGTH } from '@shared/constants/support';
+import { BookOpen, CheckCircle2, Inbox, Trash2 } from 'lucide-react';
+import type { SupportCategory, SupportConversation } from '@shared/types';
+import { SUPPORT_CATEGORIES } from '@shared/constants/support';
 import { formatChatTime } from '@/lib/format';
 import { useSupport } from '@/lib/support';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/states';
 import { TypingIndicator } from '@/components/ui/TypingIndicator';
+import { MessageBubble } from '@/components/support/MessageBubble';
+import { MessageComposer } from '@/components/support/MessageComposer';
+import { ThemesReport } from '@/components/support/ThemesReport';
 
 type Filter = 'open' | 'all';
 
@@ -30,13 +33,17 @@ export default function SupportDeskPage() {
     notifyTyping,
     markRead,
     resolve,
+    deleteConversation,
     requestHistory,
     clearError,
   } = useSupport();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('open');
-  const [draft, setDraft] = useState('');
+  /** Which thread is showing its delete confirmation, if any. */
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  /** Which thread is being resolved, and so asking for its category. */
+  const [resolving, setResolving] = useState<string | null>(null);
 
   const visible = useMemo(
     () =>
@@ -68,16 +75,6 @@ export default function SupportDeskPage() {
   }, [selectedId, requestHistory, markRead]);
 
   const totalUnread = conversations.reduce((n, c) => n + c.unreadForAdmin, 0);
-  const overLimit = draft.length > MAX_SUPPORT_MESSAGE_LENGTH;
-
-  function handleSend(e: React.FormEvent) {
-    e.preventDefault();
-    const text = draft.trim();
-    if (!text || !selectedId) return;
-    clearError();
-    send(text, selectedId);
-    setDraft('');
-  }
 
   return (
     <div>
@@ -173,101 +170,145 @@ export default function SupportDeskPage() {
                       {selected.hodName}
                     </p>
                     <p className="truncate text-xs text-slate-500">
+                      <span className="font-mono font-semibold text-slate-400">
+                        {selected.reference}
+                      </span>
+                      {' · '}
                       {selected.hodEmail}
                       {selected.departments.length > 0 &&
                         ` · ${selected.departments.join(', ')}`}
                     </p>
+                    {/* The HoD named the programme, so the office does not
+                        have to ask what this is about. */}
+                    {selected.boardProgramme && (
+                      <p className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700">
+                        <BookOpen className="h-3 w-3" aria-hidden="true" />
+                        {selected.boardProgramme}
+                      </p>
+                    )}
                   </div>
 
-                  {selected.status === 'open' ? (
-                    <Button
-                      variant="secondary"
-                      onClick={() => resolve(selected.conversationId)}
+                  <div className="flex items-center gap-2">
+                    {selected.status === 'open' ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => setResolving(selected.conversationId)}
+                      >
+                        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                        Mark resolved
+                      </Button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-inset ring-emerald-200">
+                        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        Resolved{selected.category ? ` · ${selected.category}` : ''}
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDelete(selected.conversationId)}
+                      aria-label={`Delete conversation with ${selected.hodName}`}
+                      title="Delete this conversation"
+                      className="rounded-md p-2 text-slate-400 transition hover:bg-red-50 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
                     >
-                      <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                      Mark resolved
-                    </Button>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-inset ring-emerald-200">
-                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-                      Resolved
-                    </span>
-                  )}
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
                 </header>
 
-                <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
-                  {messages.map((m) => {
-                    const mine = m.authorRole === 'admin';
-                    return (
-                      <div
-                        key={m.id}
-                        className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}
+                {/* The category is asked for here, at the end, by the person
+                    who now knows the answer — never of the HoD up front. */}
+                {resolving === selected.conversationId && (
+                  <div className="flex flex-wrap items-center gap-3 border-b border-emerald-200 bg-emerald-50 px-4 py-3">
+                    <label className="text-sm text-emerald-900">
+                      What was this about?
+                      <select
+                        autoFocus
+                        defaultValue=""
+                        onChange={(e) => {
+                          const category = e.target.value as SupportCategory;
+                          if (!category) return;
+                          resolve(selected.conversationId, category);
+                          setResolving(null);
+                        }}
+                        className="ml-2 rounded-md border border-emerald-300 bg-white px-2 py-1 text-sm text-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
                       >
-                        <p className="mb-0.5 text-xs font-semibold text-slate-500">
-                          {m.authorName}
-                        </p>
-                        <p
-                          className={`max-w-[75%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
-                            mine
-                              ? 'bg-brand-600 text-white'
-                              : 'bg-slate-100 text-slate-800'
-                          }`}
-                        >
-                          {m.text}
-                        </p>
-                        <p className="mt-0.5 text-[10px] text-slate-400">
-                          {formatChatTime(m.sentAt)}
-                        </p>
-                      </div>
-                    );
-                  })}
+                        <option value="" disabled>
+                          Choose a category…
+                        </option>
+                        {SUPPORT_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <Button variant="secondary" onClick={() => setResolving(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+
+                {confirmingDelete === selected.conversationId && (
+                  <div
+                    role="alert"
+                    className="flex flex-wrap items-center justify-between gap-3 border-b border-red-200 bg-red-50 px-4 py-3"
+                  >
+                    <p className="text-sm text-red-900">
+                      Delete this conversation, its messages and its attachments?
+                      <span className="font-semibold"> This cannot be undone.</span>
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="secondary"
+                        onClick={() => setConfirmingDelete(null)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="danger"
+                        onClick={() => {
+                          deleteConversation(selected.conversationId);
+                          setConfirmingDelete(null);
+                          setSelectedId(null);
+                        }}
+                      >
+                        Delete permanently
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+                  {messages.map((m) => (
+                    <MessageBubble
+                      key={m.id}
+                      message={m}
+                      conversation={selected}
+                      mine={m.authorRole === 'admin'}
+                      showAuthor
+                    />
+                  ))}
 
                   {typingPeer && <TypingIndicator name={typingPeer.name} />}
                 </div>
 
-                <form
-                  onSubmit={handleSend}
-                  className="flex items-end gap-2 border-t border-slate-200 px-3 py-3"
-                >
-                  <div className="flex-1">
-                    <textarea
-                      value={draft}
-                      onChange={(e) => {
-                        setDraft(e.target.value);
-                        // Throttled inside notifyTyping, so firing per
-                        // keystroke is fine.
-                        if (e.target.value.trim()) notifyTyping(selected.conversationId);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          e.currentTarget.form?.requestSubmit();
-                        }
-                      }}
-                      rows={2}
-                      placeholder={`Reply to ${selected.hodName}…`}
-                      aria-label="Reply"
-                      className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
-                    />
-                    {overLimit && (
-                      <p className="mt-1 text-xs text-red-600">
-                        {draft.length} / {MAX_SUPPORT_MESSAGE_LENGTH} characters.
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    type="submit"
-                    disabled={!draft.trim() || overLimit || status !== 'online'}
-                  >
-                    <Send className="h-4 w-4" aria-hidden="true" />
-                    <span className="sr-only">Send reply</span>
-                  </Button>
-                </form>
+                <MessageComposer
+                  placeholder={`Reply to ${selected.hodName}…`}
+                  disabled={status !== 'online'}
+                  onTyping={() => notifyTyping(selected.conversationId)}
+                  onSend={(text, image) => {
+                    clearError();
+                    send(text, selected.conversationId, image);
+                  }}
+                />
               </>
             )}
           </section>
         </div>
       )}
+
+      <ThemesReport conversations={conversations} />
     </div>
   );
 }
@@ -318,10 +359,20 @@ function ConversationList({
               </div>
 
               <p className="truncate text-xs text-slate-500">
+                <span className="font-mono font-semibold text-slate-400">
+                  {c.reference}
+                </span>
+                {' · '}
                 {c.departments.join(', ') || c.hodEmail}
               </p>
 
-              <p className="mt-1 truncate text-xs text-slate-600">
+              {/* The subject is the opening line, so several threads from one
+                  HoD are told apart at a glance. */}
+              <p className="mt-1 truncate text-xs font-medium text-slate-700">
+                {c.subject}
+              </p>
+
+              <p className="truncate text-xs text-slate-500">
                 {c.lastMessagePreview || 'No messages yet'}
               </p>
 

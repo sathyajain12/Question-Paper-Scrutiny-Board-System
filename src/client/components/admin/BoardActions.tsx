@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { BoardDetail } from '@shared/types';
+import type { BoardSummary } from '@shared/types';
 import {
   useApproveBoard,
   useOfferDates,
@@ -13,7 +13,7 @@ import { ErrorState } from '../ui/states';
  * Inline actions for one board row. Which controls appear is driven by the
  * board's status, matching the transition table in shared/domain/board-state.
  */
-export function BoardActions({ board }: { board: BoardDetail }) {
+export function BoardActions({ board }: { board: BoardSummary }) {
   switch (board.status) {
     case 'Submitted':
       return <ApproveOrReject board={board} />;
@@ -26,7 +26,7 @@ export function BoardActions({ board }: { board: BoardDetail }) {
   }
 }
 
-function LockedActions({ board }: { board: BoardDetail }) {
+function LockedActions({ board }: { board: BoardSummary }) {
   const requestChanges = useRequestChanges(board.boardId);
 
   return (
@@ -54,7 +54,7 @@ function LockedActions({ board }: { board: BoardDetail }) {
   );
 }
 
-function ApproveOrReject({ board }: { board: BoardDetail }) {
+function ApproveOrReject({ board }: { board: BoardSummary }) {
   const approve = useApproveBoard(board.boardId);
   const reject = useRejectBoard(board.boardId);
   const [reason, setReason] = useState('');
@@ -126,7 +126,7 @@ function ApproveOrReject({ board }: { board: BoardDetail }) {
   );
 }
 
-function OfferDates({ board }: { board: BoardDetail }) {
+function OfferDates({ board }: { board: BoardSummary }) {
   const offer = useOfferDates(board.boardId);
   const [dates, setDates] = useState<string[]>(['', '', '', '']);
 

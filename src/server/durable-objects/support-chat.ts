@@ -21,14 +21,26 @@
  *   seq:<conversationId>             → number
  */
 import { supportClientFrameSchema } from '@shared/schemas/support';
-import { SUPPORT_DESK_ID } from '@shared/constants/support';
+import {
+  MAX_SUBJECT_LENGTH,
+  NOTIFY_OFFICE_AFTER_MS,
+  NOTIFY_OFFICE_COOLDOWN_MS,
+  SUPPORT_DESK_ID,
+  SUPPORT_REFERENCE_PREFIX,
+  SUPPORT_REFERENCE_START,
+} from '@shared/constants/support';
 import type {
   Role,
+  SupportBoardOption,
+  SupportCategory,
   SupportConversation,
+  SupportImage,
   SupportMessage,
   SupportPresence,
   SupportServerFrame,
 } from '@shared/types';
+import type { Env } from '../env';
+import { sendEmail } from '../notifications/mailer';
 
 /**
  * Identity is passed from the Worker, which has already run `requireSession`.
@@ -42,6 +54,13 @@ export interface SupportSocketUser {
   name: string;
   role: Role;
   departments: string[];
+  /**
+   * The boards this HoD may attach to their thread, resolved from the
+   * repository at connect time. The object has no repository of its own, so
+   * this list is the only authority it has for "is that board yours?" —
+   * exactly like the session being the only authority for who you are.
+   */
+  boards?: SupportBoardOption[];
 }
 
 /**
@@ -93,14 +112,14 @@ const convKey = (id: string) => `conv:${id}`;
 const msgPrefix = (id: string) => `msg:${id}:`;
 const msgKey = (id: string, seq: number) =>
   `${msgPrefix(id)}${String(seq).padStart(12, '0')}`;
+/** Image bytes live apart from the message so history stays small. */
+const imgKey = (imageId: string) => `img:${imageId}`;
 
 export class SupportChat implements DurableObject {
   constructor(
     private readonly state: DurableObjectState,
-    private readonly env: unknown,
-  ) {
-    void this.env;
-  }
+    private readonly env: Env['Bindings'],
+  ) {}
 
   // ── Connection lifecycle ───────────────────────────────────────────
 
@@ -136,7 +155,7 @@ export class SupportChat implements DurableObject {
     await this.sendInit(server, user);
     // A new admin connecting flips "no one is online" for every waiting HoD.
     if (user.role === 'admin') this.broadcastPresence();
-    await this.scheduleSweep();
+    await this.scheduleNextAlarm();
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -166,14 +185,95 @@ export class SupportChat implements DurableObject {
     }
 
     this.broadcastPresence();
-    await this.scheduleSweep();
+    await this.notifyUnanswered();
+    await this.scheduleNextAlarm();
   }
 
-  /** Keeps one alarm pending while anyone is connected, and none when idle. */
-  private async scheduleSweep(): Promise<void> {
-    if (this.state.getWebSockets().length === 0) return;
-    if ((await this.state.storage.getAlarm()) !== null) return;
-    await this.state.storage.setAlarm(Date.now() + LIVENESS_SWEEP_MS);
+  /**
+   * One alarm serves two jobs, so it is scheduled for whichever comes first.
+   *
+   * The liveness sweep only matters while someone is connected; the office
+   * notification matters *especially* when nobody is — so an empty desk with
+   * a waiting thread still keeps an alarm pending, which the old
+   * sockets-only rule would have skipped entirely.
+   */
+  private async scheduleNextAlarm(): Promise<void> {
+    const candidates: number[] = [];
+
+    if (this.state.getWebSockets().length > 0) {
+      candidates.push(Date.now() + LIVENESS_SWEEP_MS);
+    }
+
+    for (const conversation of await this.allConversations()) {
+      if (conversation.notifyDueAt && conversation.unreadForAdmin > 0) {
+        candidates.push(Date.parse(conversation.notifyDueAt));
+      }
+    }
+
+    if (candidates.length === 0) return;
+    const next = Math.min(...candidates);
+
+    // Only move the alarm earlier; a later one would delay work already due.
+    const existing = await this.state.storage.getAlarm();
+    if (existing !== null && existing <= next) return;
+    await this.state.storage.setAlarm(next);
+  }
+
+  /**
+   * Email the office about threads that have gone unanswered with nobody on
+   * the desk. Re-checked at fire time rather than trusted from send time: an
+   * admin who signed in during the delay makes the email unnecessary.
+   */
+  private async notifyUnanswered(): Promise<void> {
+    const now = Date.now();
+    const adminHere = this.presence().adminsOnline > 0;
+
+    for (const conversation of await this.allConversations()) {
+      if (!conversation.notifyDueAt) continue;
+      if (Date.parse(conversation.notifyDueAt) > now) continue;
+
+      // Someone is here, or has already read it — nothing to chase.
+      if (adminHere || conversation.unreadForAdmin === 0) {
+        await this.state.storage.put(convKey(conversation.conversationId), {
+          ...conversation,
+          notifyDueAt: null,
+        });
+        continue;
+      }
+
+      const withinCooldown =
+        conversation.notifiedAt &&
+        now - Date.parse(conversation.notifiedAt) < NOTIFY_OFFICE_COOLDOWN_MS;
+
+      if (!withinCooldown) {
+        await this.emailOffice(conversation);
+      }
+
+      await this.state.storage.put(convKey(conversation.conversationId), {
+        ...conversation,
+        notifyDueAt: null,
+        notifiedAt: withinCooldown ? conversation.notifiedAt : new Date(now).toISOString(),
+      });
+    }
+  }
+
+  private async emailOffice(conversation: SupportConversation): Promise<void> {
+    const waiting = conversation.unreadForAdmin;
+    const about = conversation.boardProgramme
+      ? `\nProgramme: ${conversation.boardProgramme}`
+      : '';
+
+    await sendEmail(this.env, {
+      to: this.env.SUPPORT_NOTIFY_EMAIL,
+      subject: `QPSB Portal — ${conversation.hodName} is waiting for a reply`,
+      text:
+        `${conversation.hodName} (${conversation.hodEmail}) sent ${waiting} ` +
+        `${waiting === 1 ? 'message' : 'messages'} to the support desk and no one ` +
+        `was signed in to answer.` +
+        `\n\nDepartment: ${conversation.departments.join(', ') || '—'}${about}` +
+        `\nLatest: ${conversation.lastMessagePreview || '(no text)'}` +
+        `\n\nOpen the Support Desk in the QPSB Portal to reply.`,
+    });
   }
 
   /**
@@ -234,7 +334,10 @@ export class SupportChat implements DurableObject {
 
     switch (frame.type) {
       case 'send':
-        await this.handleSend(ws, user, frame.conversationId, frame.text);
+        await this.handleSend(ws, user, frame.conversationId, frame.text, frame.image);
+        return;
+      case 'image':
+        await this.handleImage(ws, frame.imageId);
         return;
       case 'typing':
         this.handleTyping(user, frame.conversationId);
@@ -243,49 +346,171 @@ export class SupportChat implements DurableObject {
         await this.handleMarkRead(user, frame.conversationId);
         return;
       case 'resolve':
-        await this.handleResolve(ws, user, frame.conversationId);
+        await this.handleResolve(ws, user, frame.conversationId, frame.category);
         return;
       case 'history':
         await this.handleHistory(ws, user, frame.conversationId);
         return;
+      case 'setBoard':
+        await this.handleSetBoard(ws, user, frame.conversationId, frame.boardId);
+        return;
+      case 'delete':
+        await this.handleDelete(ws, user, frame.conversationId);
+        return;
     }
   }
 
+  /**
+   * Attach (or clear) the board a thread is about.
+   *
+   * HoD-only, and validated against the boards resolved for this session —
+   * the object cannot ask the repository itself, so the session's list is its
+   * authority. Same rule as everywhere else: never trust the payload.
+   */
+  private async handleSetBoard(
+    ws: WebSocket,
+    user: SupportSocketUser,
+    conversationId: string,
+    boardId: string | null,
+  ): Promise<void> {
+    if (user.role !== 'hod') {
+      this.send(ws, {
+        type: 'error',
+        message: 'Only the Head of Department can set the board for a thread.',
+      });
+      return;
+    }
+
+    const match = boardId
+      ? user.boards?.find((b) => b.boardId === boardId)
+      : undefined;
+
+    if (boardId && !match) {
+      this.send(ws, { type: 'error', message: 'That is not one of your programmes.' });
+      return;
+    }
+
+    // Nothing to attach to until the thread exists; the picker is hidden
+    // client-side until then, so this is just the backstop.
+    const conversation = await this.ownedConversation(user, conversationId);
+    if (!conversation) return;
+
+    const updated: SupportConversation = {
+      ...conversation,
+      boardId: match?.boardId ?? null,
+      boardProgramme: match?.programme ?? null,
+    };
+    await this.state.storage.put(convKey(conversation.conversationId), updated);
+
+    const frame: SupportServerFrame = { type: 'conversation', conversation: updated };
+    this.toUser(updated.hodEmail, frame);
+    this.toAdmins(frame);
+  }
+
+  /** Admin-only and irreversible: the thread, its messages and its images. */
+  private async handleDelete(
+    ws: WebSocket,
+    user: SupportSocketUser,
+    rawId: string,
+  ): Promise<void> {
+    if (user.role !== 'admin') {
+      this.send(ws, {
+        type: 'error',
+        message: 'Only an administrator can delete a conversation.',
+      });
+      return;
+    }
+
+    const conversationId = rawId.toLowerCase();
+    const conversation = await this.state.storage.get<SupportConversation>(
+      convKey(conversationId),
+    );
+    if (!conversation) return;
+
+    const stored = await this.state.storage.list<SupportMessage>({
+      prefix: msgPrefix(conversationId),
+    });
+
+    await this.state.storage.delete([
+      convKey(conversationId),
+      seqKey(conversationId),
+      ...stored.keys(),
+      // Orphaned bytes would otherwise outlive the thread entirely.
+      ...[...stored.values()]
+        .map((m) => m.image?.id)
+        .filter((id): id is string => Boolean(id))
+        .map(imgKey),
+    ]);
+
+    const frame: SupportServerFrame = { type: 'deleted', conversationId };
+    this.toUser(conversation.hodEmail, frame);
+    this.toAdmins(frame);
+  }
+
   // ── Handlers ───────────────────────────────────────────────────────
+
+  /**
+   * Resolve a thread the caller is entitled to touch.
+   *
+   * Now that threads have their own ids, "is this yours?" is a real question
+   * rather than one the key answered for us — so every handler that takes a
+   * conversationId goes through here. An administrator may open any thread; a
+   * HoD only their own, and a thread that is not theirs reads as missing
+   * rather than forbidden, the same way `requireBoardAccess` 404s.
+   */
+  private async ownedConversation(
+    user: SupportSocketUser,
+    conversationId: string,
+  ): Promise<SupportConversation | null> {
+    const conversation = await this.state.storage.get<SupportConversation>(
+      convKey(conversationId),
+    );
+    if (!conversation) return null;
+    if (user.role === 'admin') return conversation;
+    return conversation.hodEmail.toLowerCase() === user.email.toLowerCase()
+      ? conversation
+      : null;
+  }
 
   private async handleSend(
     ws: WebSocket,
     user: SupportSocketUser,
     requestedId: string | undefined,
     text: string,
+    image?: { dataUrl: string; width: number; height: number },
   ): Promise<void> {
-    // A HoD always writes to their own thread. Ignoring `requestedId` here is
-    // the same rule the HTTP side follows: authority comes from the session,
-    // never from the payload (docs §6).
-    const conversationId =
-      user.role === 'admin'
-        ? requestedId?.toLowerCase()
-        : user.email.toLowerCase();
+    let conversation: SupportConversation;
 
-    if (!conversationId) {
-      this.send(ws, { type: 'error', message: 'No conversation selected.' });
-      return;
-    }
-
-    let conversation = await this.state.storage.get<SupportConversation>(
-      convKey(conversationId),
-    );
-
-    if (!conversation) {
-      if (user.role === 'admin') {
+    if (requestedId) {
+      const existing = await this.ownedConversation(user, requestedId);
+      if (!existing) {
         this.send(ws, { type: 'error', message: 'That conversation no longer exists.' });
         return;
       }
-      conversation = this.newConversation(user);
+      conversation = existing;
+    } else if (user.role === 'admin') {
+      // An admin always replies into an existing thread; they have no way to
+      // open one, because a thread belongs to the HoD who raised it.
+      this.send(ws, { type: 'error', message: 'No conversation selected.' });
+      return;
+    } else {
+      // A HoD writing with no thread named is starting a new one. The opening
+      // line becomes the subject, so a thread gets a title without anyone
+      // being asked to invent one.
+      const subject = (text || 'Image').slice(0, MAX_SUBJECT_LENGTH);
+      conversation = this.newConversation(user, await this.nextReference(), subject);
     }
 
+    const conversationId = conversation.conversationId;
     const now = new Date().toISOString();
     const seq = ((await this.state.storage.get<number>(seqKey(conversationId))) ?? 0) + 1;
+
+    let stored: SupportImage | undefined;
+    if (image) {
+      const imageId = crypto.randomUUID();
+      await this.state.storage.put(imgKey(imageId), image.dataUrl);
+      stored = { id: imageId, width: image.width, height: image.height };
+    }
 
     const message: SupportMessage = {
       id: crypto.randomUUID(),
@@ -294,13 +519,21 @@ export class SupportChat implements DurableObject {
       authorName: user.name,
       authorRole: user.role,
       text,
+      ...(stored ? { image: stored } : {}),
       sentAt: now,
     };
+
+    // Delivered the moment it is sent, if the other side is actually here.
+    // Otherwise their next connection moves the watermark (see sendInit).
+    const recipientHere =
+      user.role === 'hod'
+        ? this.liveSockets('role:admin').length > 0
+        : this.liveSockets(`user:${conversation.hodEmail.toLowerCase()}`).length > 0;
 
     conversation = {
       ...conversation,
       lastMessageAt: now,
-      lastMessagePreview: text.slice(0, PREVIEW_LENGTH),
+      lastMessagePreview: (text || '📷 Image').slice(0, PREVIEW_LENGTH),
       // A HoD writing into a resolved thread reopens it — otherwise a
       // follow-up question would land in an archive nobody is watching.
       status: user.role === 'hod' ? 'open' : conversation.status,
@@ -308,6 +541,18 @@ export class SupportChat implements DurableObject {
         user.role === 'hod' ? conversation.unreadForAdmin + 1 : conversation.unreadForAdmin,
       unreadForHod:
         user.role === 'admin' ? conversation.unreadForHod + 1 : conversation.unreadForHod,
+      adminDeliveredAt:
+        user.role === 'hod' && recipientHere ? now : conversation.adminDeliveredAt,
+      hodDeliveredAt:
+        user.role === 'admin' && recipientHere ? now : conversation.hodDeliveredAt,
+      // A HoD writing into an empty desk starts the clock on emailing the
+      // office. An existing deadline is kept, so five lines in a row is still
+      // one notification rather than five postponements.
+      notifyDueAt:
+        user.role === 'hod' && !recipientHere
+          ? (conversation.notifyDueAt ??
+            new Date(Date.now() + NOTIFY_OFFICE_AFTER_MS).toISOString())
+          : conversation.notifyDueAt,
     };
 
     await this.state.storage.put(msgKey(conversationId, seq), message);
@@ -318,9 +563,30 @@ export class SupportChat implements DurableObject {
     // essentially every conversation.
     if (seq > MAX_STORED_MESSAGES) await this.trim(conversationId);
 
+    // The live frame carries the picture so it appears instantly for both
+    // sides; history never does — it hands out ids and the client asks.
     const frame: SupportServerFrame = { type: 'message', message, conversation };
     this.toUser(conversation.hodEmail, frame);
     this.toAdmins(frame);
+
+    if (image && stored) {
+      const imageFrame: SupportServerFrame = {
+        type: 'image',
+        imageId: stored.id,
+        dataUrl: image.dataUrl,
+      };
+      this.toUser(conversation.hodEmail, imageFrame);
+      this.toAdmins(imageFrame);
+    }
+
+    // The alarm may need to fire sooner than the liveness sweep would, or at
+    // all — an unanswered thread must still be chased with nobody connected.
+    await this.scheduleNextAlarm();
+  }
+
+  private async handleImage(ws: WebSocket, imageId: string): Promise<void> {
+    const dataUrl = (await this.state.storage.get<string>(imgKey(imageId))) ?? null;
+    this.send(ws, { type: 'image', imageId, dataUrl });
   }
 
   /**
@@ -353,24 +619,31 @@ export class SupportChat implements DurableObject {
     user: SupportSocketUser,
     rawId: string,
   ): Promise<void> {
-    const conversationId =
-      user.role === 'admin' ? rawId.toLowerCase() : user.email.toLowerCase();
-
-    const conversation = await this.state.storage.get<SupportConversation>(
-      convKey(conversationId),
-    );
+    const conversation = await this.ownedConversation(user, rawId);
     if (!conversation) return;
+    const conversationId = conversation.conversationId;
 
+    // Opening a thread both clears the counter and moves this side's read
+    // watermark — which is what turns the sender's ticks green.
+    const now = new Date().toISOString();
     const updated: SupportConversation = {
       ...conversation,
       unreadForAdmin: user.role === 'admin' ? 0 : conversation.unreadForAdmin,
       unreadForHod: user.role === 'hod' ? 0 : conversation.unreadForHod,
+      adminReadAt: user.role === 'admin' ? now : conversation.adminReadAt,
+      adminDeliveredAt: user.role === 'admin' ? now : conversation.adminDeliveredAt,
+      hodReadAt: user.role === 'hod' ? now : conversation.hodReadAt,
+      hodDeliveredAt: user.role === 'hod' ? now : conversation.hodDeliveredAt,
+      // An admin has now actually looked, so there is nothing to chase.
+      notifyDueAt: user.role === 'admin' ? null : conversation.notifyDueAt,
     };
 
     // Nothing changed — don't spend a storage write or a broadcast on it.
     if (
       updated.unreadForAdmin === conversation.unreadForAdmin &&
-      updated.unreadForHod === conversation.unreadForHod
+      updated.unreadForHod === conversation.unreadForHod &&
+      updated.adminReadAt === conversation.adminReadAt &&
+      updated.hodReadAt === conversation.hodReadAt
     ) {
       return;
     }
@@ -386,6 +659,7 @@ export class SupportChat implements DurableObject {
     ws: WebSocket,
     user: SupportSocketUser,
     rawId: string,
+    category: SupportCategory,
   ): Promise<void> {
     if (user.role !== 'admin') {
       this.send(ws, {
@@ -395,18 +669,19 @@ export class SupportChat implements DurableObject {
       return;
     }
 
-    const conversationId = rawId.toLowerCase();
-    const conversation = await this.state.storage.get<SupportConversation>(
-      convKey(conversationId),
-    );
+    const conversation = await this.ownedConversation(user, rawId);
     if (!conversation) return;
 
     const updated: SupportConversation = {
       ...conversation,
       status: 'resolved',
       unreadForAdmin: 0,
+      category,
+      resolvedAt: new Date().toISOString(),
+      // Answered, so there is nothing left for the office to be chased about.
+      notifyDueAt: null,
     };
-    await this.state.storage.put(convKey(conversationId), updated);
+    await this.state.storage.put(convKey(conversation.conversationId), updated);
 
     const frame: SupportServerFrame = { type: 'conversation', conversation: updated };
     this.toUser(updated.hodEmail, frame);
@@ -418,14 +693,16 @@ export class SupportChat implements DurableObject {
     user: SupportSocketUser,
     rawId: string,
   ): Promise<void> {
-    // A HoD may only ever read their own thread, whatever they asked for.
-    const conversationId =
-      user.role === 'admin' ? rawId.toLowerCase() : user.email.toLowerCase();
+    // Reading someone else's transcript returns an empty one rather than an
+    // error, so a stale id in a client cannot probe for what exists.
+    const conversation = await this.ownedConversation(user, rawId);
 
     this.send(ws, {
       type: 'history',
-      conversationId,
-      messages: await this.messagesFor(conversationId),
+      conversationId: rawId,
+      messages: conversation
+        ? await this.messagesFor(conversation.conversationId)
+        : [],
     });
   }
 
@@ -434,28 +711,63 @@ export class SupportChat implements DurableObject {
   private async sendInit(ws: WebSocket, user: SupportSocketUser): Promise<void> {
     const presence = this.presence();
 
-    if (user.role === 'admin') {
-      this.send(ws, {
-        type: 'init',
-        presence,
-        conversations: await this.allConversations(),
-      });
-      return;
-    }
+    // Coming online is what makes everything already waiting "delivered" —
+    // the single tick on the sender's side becomes a double one.
+    await this.markDelivered(user.role === 'admin' ? 'admin' : 'hod', user.email);
 
-    const conversationId = user.email.toLowerCase();
-    const conversation = await this.state.storage.get<SupportConversation>(
-      convKey(conversationId),
-    );
+    // Both roles get a list now: an admin every thread, a HoD their own.
+    // Transcripts are fetched per thread on open, so a HoD with a dozen past
+    // questions does not drag a dozen transcripts down on connect.
+    const all = await this.allConversations();
+    const conversations =
+      user.role === 'admin'
+        ? all
+        : all.filter(
+            (c) => c.hodEmail.toLowerCase() === user.email.toLowerCase(),
+          );
 
     this.send(ws, {
       type: 'init',
       presence,
-      // No thread yet is the normal first-visit case, not an error — the
-      // conversation is created lazily by the first message.
-      conversation: conversation ?? undefined,
-      messages: conversation ? await this.messagesFor(conversationId) : [],
+      conversations,
+      ...(user.role === 'hod' ? { boards: user.boards ?? [] } : {}),
     });
+  }
+
+  /**
+   * Move a side's delivered watermark to now, because they just connected.
+   *
+   * Only threads with something actually waiting are touched, so a quiet desk
+   * costs one `list` and no writes.
+   */
+  private async markDelivered(side: 'admin' | 'hod', email: string): Promise<void> {
+    const now = new Date().toISOString();
+
+    const all = await this.allConversations();
+    // An admin serves every thread; a HoD only the ones they raised.
+    const targets =
+      side === 'admin'
+        ? all
+        : all.filter((c) => c.hodEmail.toLowerCase() === email.toLowerCase());
+
+    for (const conversation of targets) {
+      // Nothing unread for this side means nothing to mark.
+      const pending =
+        side === 'admin' ? conversation.unreadForAdmin : conversation.unreadForHod;
+      if (pending === 0) continue;
+
+      const updated: SupportConversation = {
+        ...conversation,
+        adminDeliveredAt: side === 'admin' ? now : conversation.adminDeliveredAt,
+        hodDeliveredAt: side === 'hod' ? now : conversation.hodDeliveredAt,
+      };
+
+      await this.state.storage.put(convKey(conversation.conversationId), updated);
+
+      const frame: SupportServerFrame = { type: 'conversation', conversation: updated };
+      this.toUser(updated.hodEmail, frame);
+      this.toAdmins(frame);
+    }
   }
 
   private send(ws: WebSocket, frame: SupportServerFrame): void {
@@ -465,6 +777,11 @@ export class SupportChat implements DurableObject {
       // The socket died between our lookup and this write. Presence will be
       // corrected by the close handler; there is nothing useful to do here.
     }
+  }
+
+  /** Sockets on a tag that are still answering pings — see `isAlive`. */
+  private liveSockets(tag: string): WebSocket[] {
+    return this.state.getWebSockets(tag).filter((s) => this.isAlive(s));
   }
 
   private toAdmins(frame: SupportServerFrame): void {
@@ -518,10 +835,30 @@ export class SupportChat implements DurableObject {
     };
   }
 
-  private newConversation(user: SupportSocketUser): SupportConversation {
+  /**
+   * References are sequential rather than random so they can be read out on
+   * the phone. The counter lives in storage, which the single-threaded object
+   * makes safe to increment without a lock.
+   */
+  private async nextReference(): Promise<string> {
+    const seq =
+      ((await this.state.storage.get<number>('refSeq')) ?? SUPPORT_REFERENCE_START) + 1;
+    await this.state.storage.put('refSeq', seq);
+    return `${SUPPORT_REFERENCE_PREFIX}-${seq}`;
+  }
+
+  private newConversation(
+    user: SupportSocketUser,
+    reference: string,
+    subject: string,
+  ): SupportConversation {
     const now = new Date().toISOString();
     return {
-      conversationId: user.email.toLowerCase(),
+      conversationId: crypto.randomUUID(),
+      reference,
+      subject,
+      category: null,
+      resolvedAt: null,
       hodEmail: user.email,
       hodName: user.name,
       departments: user.departments,
@@ -531,6 +868,14 @@ export class SupportChat implements DurableObject {
       lastMessagePreview: '',
       unreadForAdmin: 0,
       unreadForHod: 0,
+      hodDeliveredAt: null,
+      hodReadAt: null,
+      adminDeliveredAt: null,
+      adminReadAt: null,
+      boardId: null,
+      boardProgramme: null,
+      notifyDueAt: null,
+      notifiedAt: null,
     };
   }
 
@@ -555,16 +900,23 @@ export class SupportChat implements DurableObject {
   }
 
   private async trim(conversationId: string): Promise<void> {
-    const keys = [
-      ...(
-        await this.state.storage.list<SupportMessage>({
-          prefix: msgPrefix(conversationId),
-        })
-      ).keys(),
-    ];
-    if (keys.length <= MAX_STORED_MESSAGES) return;
+    const stored = await this.state.storage.list<SupportMessage>({
+      prefix: msgPrefix(conversationId),
+    });
+    const entries = [...stored.entries()];
+    if (entries.length <= MAX_STORED_MESSAGES) return;
 
-    await this.state.storage.delete(keys.slice(0, keys.length - MAX_STORED_MESSAGES));
+    const dropped = entries.slice(0, entries.length - MAX_STORED_MESSAGES);
+
+    // Delete each dropped message's picture too, or the bytes outlive the
+    // message forever with nothing left pointing at them.
+    await this.state.storage.delete([
+      ...dropped.map(([key]) => key),
+      ...dropped
+        .map(([, message]) => message.image?.id)
+        .filter((id): id is string => Boolean(id))
+        .map(imgKey),
+    ]);
   }
 }
 

@@ -38,23 +38,27 @@ export function AppLayout() {
   return (
     <SupportProvider user={user}>
       <div className="min-h-full">
-        <header className="border-b-4 border-brand-600 bg-white">
-          <div className="mx-auto flex max-w-7xl flex-col items-center gap-3 px-4 py-5">
-            {/* Files in public/ are referenced by path, not imported — Vite
-                copies them through untouched. Drop public/logo.png in place. */}
+        {/* Sticky and compact: the logo used to sit centred at h-28 on a row of
+            its own, spending ~180px of every screen before any content. */}
+        <header className="sticky top-0 z-30 border-b-4 border-brand-600 bg-white">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-end gap-x-8 gap-y-1 px-4">
+            {/* logo.png is a 967×111 lockup: the emblem and both lines of the
+                institute's name are part of the image. Nothing is set beside
+                it, because anything we wrote would repeat what it already
+                says — which is exactly how this header ended up crowded. */}
             <img
               src="/logo.png"
-              alt="SSSIHL"
-              className="h-20 w-auto sm:h-28"
+              alt="Sri Sathya Sai Institute of Higher Learning — QPSB Management System"
+              className="my-2.5 h-8 w-auto shrink-0 self-center sm:h-10"
               // Until public/logo.png is added, hide rather than show a broken
               // image icon. Harmless once the real asset is in place.
               onError={(e) => {
                 e.currentTarget.style.display = 'none';
               }}
             />
-          </div>
 
-          {user && <NavBar user={user} />}
+            {user && <NavBar user={user} />}
+          </div>
         </header>
 
         <main className="mx-auto max-w-7xl px-4 py-6">
@@ -71,7 +75,7 @@ function NavBar({ user }: { user: SessionUser }) {
   const supportUnread = useAdminUnreadCount();
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-3 px-4">
+    <div className="flex flex-1 flex-wrap items-end justify-between gap-3">
       <nav className="flex flex-wrap gap-1">
         {NAV.filter((entry) => entry.roles.includes(user.role)).map((entry) => (
           <NavLink

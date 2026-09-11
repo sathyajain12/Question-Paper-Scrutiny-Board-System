@@ -1,6 +1,18 @@
 @import 'tailwindcss';
 
 /**
+ * Keep the design canvas out of Tailwind's source scan.
+ *
+ * `design/` holds a published Claude Design canvas — a single ~2.4 MB HTML
+ * file with an editor bundled into it. Tailwind auto-detects sources, found
+ * it, and harvested every class-shaped string in that bundle: the stylesheet
+ * went from 28 KB to 100 KB, carrying utilities this app never uses
+ * (`bg-violet-100`, `cursor-grab`, `z-[25]`, …). Excluding it puts the build
+ * back to the classes we actually write.
+ */
+@source not "../../design";
+
+/**
  * SSSIHL identity, carried over from the Apps Script portal.
  * Tailwind v4 reads design tokens straight from @theme.
  */

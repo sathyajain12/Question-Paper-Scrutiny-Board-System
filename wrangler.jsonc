@@ -41,7 +41,11 @@
     "DEV_MODE": "true",
     "GOOGLE_WORKSPACE_DOMAIN": "sssihl.edu.in",
     "SPREADSHEET_ID": "TODO",
-    "DRIVE_ROOT_FOLDER_ID": "TODO"
+    "DRIVE_ROOT_FOLDER_ID": "TODO",
+
+    // Where the support desk emails a HoD's unanswered question. Until this
+    // is a real address the notification is logged instead of sent.
+    "SUPPORT_NOTIFY_EMAIL": "TODO_SET_COE_OFFICE_EMAIL"
   }
 
   // Secrets (never here — use `wrangler secret put NAME`):

@@ -15,6 +15,8 @@ export interface Env {
     GOOGLE_WORKSPACE_DOMAIN: string;
     SPREADSHEET_ID: string;
     DRIVE_ROOT_FOLDER_ID: string;
+    /** Where the support desk emails unanswered threads. Placeholder until set. */
+    SUPPORT_NOTIFY_EMAIL: string;
 
     // secrets — `wrangler secret put`
     GOOGLE_OAUTH_CLIENT_ID: string;

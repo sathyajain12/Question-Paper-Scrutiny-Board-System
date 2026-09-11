@@ -891,6 +891,255 @@ HoD-supplied `conversationId` is ignored; and nothing lands in stored history.
 
 ---
 
+### 2026-09-11 — Admin Portal redesign
+
+**Decision.** The Admin Portal splits into a **work queue** above a
+**browsable table**, status renders as a 3-step track, and the stat tiles and
+filter chips merge into one control. Heavy actions moved into a drawer. Built
+from the mockups in the design canvas of the same date.
+
+**Why this approach.** The old screen was a database viewer, not a workspace:
+six equal-weight tiles, then the same six statuses again as chips, then a
+uniform table where a `NotSubmitted` board an admin cannot act on looked
+exactly as important as a `Submitted` one waiting on their approval. Nothing
+answered the question the page exists to answer — *what needs me right now?*
+
+- **`ActionQueue` is defined by who moves next, not by status.** It holds
+  `Submitted` plus `Approved`-with-no-dates-offered: the two cases where the
+  next move belongs to the office. That is a different axis from the status
+  counts, which is why "Needs your action" sits apart from the five tiles
+  rather than among them.
+- **The counts became the filter.** One control instead of two rows saying
+  the same thing, and breaking the equal-weight grid lets the number an admin
+  came for carry the page. Selection keeps `aria-pressed`, as the chips had.
+- **`StatusTrack` shows position, not a word.** Three segments —
+  Submitted → Approved → Scheduled — because `NotSubmitted` is the absence of
+  progress rather than a step. `Rejected` deliberately reads as a step *lost*
+  (one red segment, then a broken one), so scanning the column shows which
+  board fell back, not merely how far each got. The label stays beside the
+  track: colour is never the only signal (docs §11 item 8).
+
+**Alternatives rejected.** Keeping one table and only restyling it — the row
+heights are caused by the action UI, so no amount of styling fixes them.
+Sorting by status alone — it answers "what state is everything in", not
+"what do I do next".
+
+**Cost.** More components, and a second concept (queue vs table) for a new
+admin to learn. The queue's empty state is common outside QPSB week, which is
+deliberate: an empty queue is the honest answer to "what needs me".
+
+**Code.** `client/routes/admin/index.tsx`, `components/admin/ActionQueue.tsx`,
+`components/admin/BoardDrawer.tsx`, `components/admin/BoardRow.tsx`,
+`components/admin/SummaryCards.tsx`, `components/ui/StatusTrack.tsx`,
+`components/AppLayout.tsx`.
+
+---
+
+### 2026-09-11 — `BoardSummary` carries members, dates and flags
+
+**Decision.** The board list payload now includes `members`, `availableDates`,
+`sessionTime`, `changesRequested` and `closed`. `BoardDetail` keeps only what
+is genuinely detail: `chairperson`, `courses`, `actionBy`, `actionAt`,
+`rejectionReason`.
+
+**Why this approach.** This closes the N+1 recorded in the 2026-09-07 UI
+review. `BoardRow` called `useBoard()` **per row**, purely to reach `members`
+and `version` — one request per board on every page load, each cell
+independently flipping from "Loading…" to content, and a table that visibly
+jittered as it settled. The admin screen is now **one request**.
+
+It also makes the split mean something: the list carries what a *list* needs,
+and the drawer fetches detail only when a board is actually opened. That is
+what makes the drawer affordable rather than another N+1 waiting to happen.
+
+**The knock-on that made this cheap.** With `status`, `version`,
+`availableDates` and `changesRequested` all on the summary, `BoardActions`
+now takes a `BoardSummary` instead of a `BoardDetail` — so the queue cards and
+the drawer footer share one component instead of duplicating the state
+machine. `BoardDetail extends BoardSummary`, so the drawer passes detail
+straight in.
+
+**Cost.** A heavier list payload — and it grows with board count, which
+matters once this is talking to Sheets rather than fixtures. Still far cheaper
+than N round trips: one `batchGet` already reads `BoardMembers` and
+`BoardDates` (§8), so the live repository pays nothing extra to include them.
+
+**Code.** `shared/types.ts`, `server/repositories/mock-sheets.ts` (`toSummary`),
+`components/admin/BoardActions.tsx`.
+
+**Verified by.** `/api/boards` returns members and dates for all five boards;
+summary and detail agree on `version`, `members` and `changesRequested` for
+every board; an approve through the new path moved v3 → v4 and a stale repeat
+returned 409.
+
+---
+
+### 2026-09-11 — Support desk: office email, board attachment, deletion
+
+**Decision.** Three additions, chosen because each closes a gap that made the
+desk less trustworthy rather than merely less featureful.
+
+---
+
+**1. Email the office when a thread goes unanswered.**
+
+The desk previously assumed someone had the portal open. A HoD writing at 9pm
+reached storage and nothing else — the phone number covered *their* side of
+that, but nothing told the office anything was waiting. Five minutes after a
+HoD writes with no administrator connected, the office is emailed.
+
+The decision that matters is **re-checking at fire time, not trusting send
+time**: an admin who signs in during the delay makes the email unnecessary, so
+`notifyUnanswered` re-reads presence and the unread count before sending. A
+one-hour cooldown per thread means five lines typed in a row are one problem,
+not five emails.
+
+This forced the alarm to serve two masters. The liveness sweep only matters
+while someone is connected; the notification matters **especially when nobody
+is** — so `scheduleSweep`'s "no sockets, no alarm" rule would have skipped the
+case the feature exists for. `scheduleNextAlarm` now takes the earliest of the
+two deadlines and keeps an alarm pending on an empty desk with a waiting
+thread.
+
+`notifications/mailer.ts` is a seam, the same shape as `repositories/`: the
+rest of the server never learns the provider. In DEV_MODE, or with the key or
+address unset, it logs instead of sending — matching every other notification
+here (`notify-admin`, `request-changes`, `close`) so the workflow is wired end
+to end before credentials exist. Throwing instead would make the desk unusable
+in development.
+
+---
+
+**2. A thread can name the board it is about.**
+
+Nearly every conversation opened with the office asking "which programme?" The
+portal already knows the HoD's boards, so the thread carries the answer: a
+picker in the widget, and the programme shown in the admin's thread header.
+
+**The authorisation is the interesting part.** The Durable Object has no
+repository and cannot ask whether a board belongs to a HoD. So the *route*
+resolves `listBoards(user)` at connect time — role-scoped, from the session —
+and stamps the result onto the socket identity. The object validates the id
+against that list. It is the same rule as everywhere else in this codebase
+(authority comes from the session, never the payload), applied to a component
+that has no data access of its own.
+
+`boardProgramme` is denormalised alongside `boardId` so the admin screen can
+label a thread without a second lookup.
+
+---
+
+**3. An administrator can delete a conversation.**
+
+Threads accumulated forever with no way to remove one — twice during
+development the only way to clear test traffic was deleting Durable Object
+storage by hand. Deletion removes the conversation, its messages **and its
+images**; an orphaned image would otherwise outlive the thread with nothing
+pointing at it. It is admin-only, irreversible, and confirmed inline.
+
+`resolve` already covers the archive case (resolved threads are filtered out
+of the default view), so this is a hard delete rather than a second soft state.
+
+---
+
+**Cost.** One more alarm reason, a per-thread notification deadline, and a list
+scan on each alarm — all O(conversations), which is tens, not thousands. The
+board list adds one `listBoards` call per socket connect.
+
+**Code.** `server/notifications/mailer.ts`,
+`server/durable-objects/support-chat.ts` (`handleSetBoard`, `handleDelete`,
+`notifyUnanswered`, `scheduleNextAlarm`, `emailOffice`),
+`server/routes/support.ts`, `shared/types.ts`, `shared/schemas/support.ts`,
+`shared/constants/support.ts`, `client/lib/support.tsx`,
+`client/components/help-chat/HelpChatWidget.tsx`,
+`client/routes/support/index.tsx`, `wrangler.jsonc`, `server/env.ts`.
+
+**Verified by.** 12 scripted checks over live sockets: the board list arrives
+scoped to the HoD's own departments, attaching and clearing work, a board
+outside their departments is refused, an admin cannot set it, a HoD cannot
+delete, an admin can, both sides are told, and the thread and its messages are
+genuinely gone afterwards. The notification was verified with the delay
+temporarily shortened — the email composed correctly with the right recipient,
+subject and body, and **was correctly suppressed** when an administrator signed
+in during the delay. The delay was restored to five minutes afterwards.
+
+---
+
+### 2026-09-11 — A thread per question, not per HoD
+
+**Decision.** `conversationId` is now an opaque per-thread id instead of the
+HoD's email. A HoD may have several threads; each carries a quotable
+reference (`QPSB-104`) and a subject taken from its opening line.
+
+**Why this approach.** This was the one place the chat model genuinely broke
+down. Keying by email gave each HoD exactly one thread, so two unrelated
+problems — a wrong faculty list and a failing upload — interleaved in a single
+transcript that could only be resolved as a whole. That is the problem people
+buy a ticket system to solve, and it needed a new key, not a new product.
+
+**What was deliberately *not* added.** No form, no priority, no
+HoD-chosen category. Asking someone to classify a problem before describing it
+is the ceremony that makes them phone the office instead, and they are
+guessing anyway. A thread still starts by typing a sentence; the subject is
+that sentence.
+
+**The authorisation this forced.** With threads keyed by email, "is this
+yours?" was answered by the key itself. Now it is a real question, so every
+handler taking a `conversationId` goes through `ownedConversation` — admins
+see any thread, a HoD only their own, and someone else's reads as *missing*
+rather than forbidden, the same way `requireBoardAccess` 404s rather than 403s.
+
+**Cost.** Existing threads could not be migrated — the stored shape changed —
+so the desk was cleared. That was acceptable here because it held only test
+data; it would not be after go-live.
+
+---
+
+### 2026-09-11 — Categories at resolve time, and the themes report
+
+**Decision.** An administrator picks a category when resolving a thread, and
+the Support Desk shows the distribution across resolved threads.
+
+**Why this approach.** This is the one thing a ticket system does that a chat
+cannot: a chat answers a question and forgets it, so nobody ever learns that
+the same faculty-list problem was explained thirty times. Counting resolved
+threads by category turns support traffic into a list of things worth fixing
+in the portal or the FAQ — which is the *institutional* value, and it is worth
+more than tracking any individual request.
+
+**The asymmetry is the design.** The category is asked of the **admin at the
+end**, never of the HoD at the start. The admin knows what it actually was
+once they have answered it; the HoD is guessing before they have explained it.
+Same information, one of the two costs nothing.
+
+A reopened thread keeps the category it was resolved under, so reopening does
+not silently erase a data point.
+
+**Rejected: routing and assignment.** The other thing tickets do. It earns its
+keep when support spans several teams with separate queues; here the team is
+the COE office. Revisit if IT or individual departments start handling
+categories of request — that is a genuine ticket system and this is not.
+
+**Cost.** One dropdown per resolution, and a report that is meaningless until
+enough threads have been closed to show a shape.
+
+**Code.** `shared/constants/support.ts` (`SUPPORT_CATEGORIES`, reference
+prefix), `shared/types.ts`, `shared/schemas/support.ts`,
+`server/durable-objects/support-chat.ts` (`ownedConversation`,
+`nextReference`), `client/components/support/ThemesReport.tsx`,
+`client/components/help-chat/HelpChatWidget.tsx` (thread list),
+`client/routes/support/index.tsx`, `client/lib/support.tsx`.
+
+**Verified by.** 19 scripted checks over live sockets: two questions open two
+threads with sequential references; a follow-up stays in its own thread;
+another HoD can neither post into nor read someone else's thread; a HoD's list
+contains only their own and carries no transcripts; resolving records the
+category and time; an unknown category is refused; a HoD cannot resolve; a
+reply reopens a thread while keeping its category; and a board attaches to one
+thread without touching the other.
+
+---
+
 ### ⚠️ Before deploying the support desk
 
 - **Set the phone number.** `SUPPORT_PHONE` in
@@ -898,6 +1147,10 @@ HoD-supplied `conversationId` is ignored; and nothing lands in stored history.
   widget detects this and shows a configuration notice rather than a fake
   number — a plausible-looking wrong number is worse than an obvious gap,
   because a HoD would dial it.
+- **Set the office email address**, `SUPPORT_NOTIFY_EMAIL` in
+  `wrangler.jsonc`, and `wrangler secret put RESEND_API_KEY`. Until both are
+  real, an unanswered thread is logged rather than emailed — so nobody is
+  told, which is the failure this feature exists to prevent.
 - Conversations live in Durable Object storage, **not** in Google Sheets. They
   are outside the `AuditLog` (§4 of ARCHITECTURE.md). If support threads need
   to be auditable alongside board actions, that is unbuilt work.

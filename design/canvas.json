@@ -1,0 +1,25 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 1200, "title": "Redesign — queue + table" },
+    { "file": "Current.dc.html", "x": 1560, "y": 0, "w": 1440, "h": 900, "title": "Today, for comparison" },
+    { "file": "StatusTrack.dc.html", "x": 0, "y": 1320, "w": 900, "h": 620, "title": "Direction 2 — status track" },
+    { "file": "StatStrip.dc.html", "x": 1020, "y": 1320, "w": 900, "h": 520, "title": "Counts as filters" }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -150,
+      "w": 420,
+      "text": "Admin Portal redesign\n\nDirection 1 — a work queue above a browsable table.\nDirection 2 — status shown as a 3-step track.\nPlus the stat tiles and filter chips merged into one control.\n\nRows beyond the five fixture boards are sample data."
+    },
+    {
+      "id": "compare-note",
+      "x": 1560,
+      "y": -150,
+      "w": 380,
+      "text": "The current page, rebuilt from the real component values — six equal tiles, the same six statuses repeated as chips, and an Actions column that sets each row's height."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

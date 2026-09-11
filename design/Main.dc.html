@@ -1,0 +1,340 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    a { color: #0c5196; text-decoration: none; }
+    a:hover { color: #0a3d6e; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; background: #ffffff; color: #1e293b;">
+
+  <!-- Compact sticky header: logo left at 48px instead of a centred 112px block -->
+  <div style="background: #ffffff; border-bottom: 4px solid #0c5196;">
+    <div style="max-width: 1280px; margin: 0 auto; padding: 0 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;">
+      <div style="display: flex; align-items: center; gap: 28px;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 0;">
+          <div style="width: 40px; height: 40px; border-radius: 50%; background: #0c5196; display: flex; align-items: center; justify-content: center; color: #ffffff; font-size: 13px; font-weight: 700; letter-spacing: 0.02em;">SSS</div>
+          <div style="display: flex; flex-direction: column; gap: 1px;">
+            <span style="font-size: 13px; font-weight: 700; color: #0c5196; line-height: 1.1;">SSSIHL</span>
+            <span style="font-size: 11px; color: #64748b; line-height: 1.1;">QPSB Portal</span>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 4px;">
+          <div style="background: #0c5196; color: #ffffff; border-radius: 6px 6px 0 0; padding: 12px 20px; font-size: 14px; font-weight: 700;">Admin Portal</div>
+          <div style="background: #eff5fb; color: #0c5196; border-radius: 6px 6px 0 0; padding: 12px 20px; font-size: 14px; font-weight: 700;">Faculty Overrides</div>
+          <div style="background: #eff5fb; color: #0c5196; border-radius: 6px 6px 0 0; padding: 12px 20px; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+            Support Desk
+            <span style="background: #dc2626; color: #ffffff; border-radius: 9999px; padding: 2px 6px; font-size: 10px; font-weight: 700;">2</span>
+          </div>
+          <div style="background: #eff5fb; color: #0c5196; border-radius: 6px 6px 0 0; padding: 12px 20px; font-size: 14px; font-weight: 700;">File Checker</div>
+        </div>
+      </div>
+
+      <p style="margin: 0; padding-bottom: 8px; font-size: 12px; color: #64748b;">
+        <span style="font-weight: 600; color: #334155;">Controller of Examinations</span> · Administrator
+      </p>
+    </div>
+  </div>
+
+  <div style="max-width: 1280px; margin: 0 auto; padding: 24px 16px 48px;">
+
+    <h2 style="margin: 0; font-size: 18px; font-weight: 700; color: #0c5196;">Admin Portal</h2>
+    <p style="margin: 4px 0 0; font-size: 14px; color: #64748b;">Board constitution status and session scheduling.</p>
+
+    <!-- Merged stat + filter strip. These ARE the filters: no second row of chips. -->
+    <div style="display: flex; gap: 12px; margin-top: 20px; align-items: stretch;">
+
+      <!-- Primary tile: the one number an admin opens this page to check -->
+      <div style="flex: 0 0 260px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#92400e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <span style="font-size: 13px; font-weight: 600; color: #92400e;">Needs your action</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 10px; margin-top: 10px;">
+          <span style="font-size: 44px; font-weight: 700; color: #92400e; line-height: 1;">3</span>
+          <span style="font-size: 13px; color: #92400e;">boards waiting</span>
+        </div>
+      </div>
+
+      <!-- Secondary counts, one row, each a filter -->
+      <div style="flex: 1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px;">
+        <sc-for list="{{tiles}}" as="tile" hint-placeholder-count="5">
+          <div style="background: {{tile.bg}}; border: 1px solid {{tile.border}}; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="width: 8px; height: 8px; border-radius: 50%; background: {{tile.dot}};"></span>
+              <span style="font-size: 11px; font-weight: 600; color: {{tile.fg}}; letter-spacing: 0.01em;">{{tile.label}}</span>
+            </div>
+            <span style="font-size: 26px; font-weight: 700; color: {{tile.fg}}; line-height: 1;">{{tile.count}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- ── Needs you ─────────────────────────────────────────────── -->
+    <div style="margin-top: 28px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+        <h3 style="margin: 0; font-size: 14px; font-weight: 700; color: #334155; letter-spacing: 0.02em; text-transform: uppercase;">Needs you</h3>
+        <span style="font-size: 12px; color: #64748b;">Everything else is waiting on a Head of Department</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 14px;">
+        <sc-for list="{{queue}}" as="card" hint-placeholder-count="3">
+          <div style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); outline: 1px solid #e2e8f0; outline-offset: -1px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <span style="font-size: 15px; font-weight: 700; color: #0c5196; line-height: 1.25;">{{card.programme}}</span>
+              <span style="font-size: 12px; color: #64748b;">{{card.department}} · {{card.courses}} courses</span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="display: inline-flex; align-items: center; gap: 6px; border-radius: 9999px; padding: 4px 12px; font-size: 12px; font-weight: 600; background: {{card.badgeBg}}; color: {{card.badgeFg}}; outline: 1px solid {{card.badgeRing}}; outline-offset: -1px;">
+                {{card.badgeLabel}}
+              </span>
+              <span style="font-size: 11px; color: #94a3b8;">{{card.waited}}</span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <span style="font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em;">{{card.peopleLabel}}</span>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                <sc-for list="{{card.people}}" as="person" hint-placeholder-count="2">
+                  <span style="background: #eff5fb; color: #0a3d6e; border-radius: 9999px; padding: 3px 10px; font-size: 11px; font-weight: 500;">{{person}}</span>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 2px;">
+              <div style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 6px; padding: 8px 16px; font-size: 14px; font-weight: 600; background: {{card.primaryBg}}; color: #ffffff;">{{card.primaryLabel}}</div>
+              <div style="display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; padding: 8px 14px; font-size: 14px; font-weight: 600; background: #ffffff; color: #0c5196; outline: 1px solid #d6e5f4; outline-offset: -1px;">{{card.secondaryLabel}}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- ── All boards ────────────────────────────────────────────── -->
+    <div style="margin-top: 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+      <h3 style="margin: 0; font-size: 14px; font-weight: 700; color: #334155; letter-spacing: 0.02em; text-transform: uppercase;">All boards</h3>
+
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 8px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; width: 240px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <span style="font-size: 13px; color: #94a3b8;">Search programme or department</span>
+        </div>
+        <div style="display: flex; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
+          <span style="padding: 6px 12px; font-size: 12px; font-weight: 600; background: {{comfyBg}}; color: {{comfyFg}};">Comfortable</span>
+          <span style="padding: 6px 12px; font-size: 12px; font-weight: 600; background: {{compactBg}}; color: {{compactFg}};">Compact</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 12px; border-radius: 8px; outline: 1px solid #e2e8f0; outline-offset: -1px; overflow: hidden; background: #ffffff;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <thead>
+          <tr style="background: #f8fafc; text-align: left; font-size: 12px; color: #475569; text-transform: uppercase; letter-spacing: 0.03em;">
+            <th style="padding: 10px 12px; font-weight: 600;">Board</th>
+            <th style="padding: 10px 12px; font-weight: 600; width: 76px;">Degree</th>
+            <th style="padding: 10px 12px; font-weight: 600; width: 210px;">Progress</th>
+            <th style="padding: 10px 12px; font-weight: 600;">Submitted by</th>
+            <th style="padding: 10px 12px; font-weight: 600;">Session</th>
+            <th style="padding: 10px 12px; font-weight: 600; width: 150px;">Constitution</th>
+            <th style="padding: 10px 12px; font-weight: 600; width: 96px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{rows}}" as="row" hint-placeholder-count="8">
+            <tr style="border-top: 1px solid #f1f5f9;">
+              <td style="padding: {{pad}} 12px; vertical-align: middle;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span style="font-weight: 600; color: #0c5196;">{{row.programme}}</span>
+                  <span style="font-size: 12px; color: #64748b;">{{row.department}}</span>
+                </div>
+              </td>
+
+              <td style="padding: {{pad}} 12px; color: #475569; vertical-align: middle;">{{row.degree}}</td>
+
+              <!-- Direction 2: the lifecycle as a track, colour + label together -->
+              <td style="padding: {{pad}} 12px; vertical-align: middle;">
+                <div style="display: flex; flex-direction: column; gap: 5px;">
+                  <div style="display: flex; gap: 3px; align-items: center;">
+                    <sc-for list="{{row.track}}" as="seg" hint-placeholder-count="3">
+                      <span style="width: 34px; height: 5px; border-radius: 9999px; background: {{seg.color}};"></span>
+                    </sc-for>
+                    <span style="margin-left: 6px; font-size: 12px; font-weight: 600; color: {{row.badgeFg}};">{{row.statusLabel}}</span>
+                  </div>
+                  <span style="font-size: 11px; color: #94a3b8;">{{row.stageHint}}</span>
+                </div>
+              </td>
+
+              <td style="padding: {{pad}} 12px; font-size: 12px; color: #475569; vertical-align: middle;">{{row.submittedBy}}</td>
+              <td style="padding: {{pad}} 12px; font-size: 12px; color: #475569; vertical-align: middle;">{{row.session}}</td>
+
+              <td style="padding: {{pad}} 12px; vertical-align: middle;">
+                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                  <sc-for list="{{row.members}}" as="m" hint-placeholder-count="2">
+                    <span style="background: #eff5fb; color: #0a3d6e; border-radius: 9999px; padding: 2px 8px; font-size: 11px; font-weight: 500;">{{m}}</span>
+                  </sc-for>
+                </div>
+              </td>
+
+              <td style="padding: {{pad}} 12px; text-align: right; vertical-align: middle;">
+                <span style="display: inline-flex; align-items: center; gap: 5px; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 600; color: #0c5196; outline: 1px solid #d6e5f4; outline-offset: -1px;">
+                  Review
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0c5196" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+                </span>
+              </td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="margin: 12px 0 0; font-size: 12px; color: #94a3b8;">
+      Heavy actions — rejection reasons, offering dates — open in a side drawer rather than expanding a row.
+    </p>
+
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{
+  "density": {"editor": "enum", "options": ["comfortable", "compact"], "default": "comfortable", "section": "Layout"},
+  "$preview": {"width": 1440, "height": 1200}
+}'>
+class Component extends DCLogic {
+  renderVals() {
+    const density = this.props.density ?? 'comfortable';
+    const compact = density === 'compact';
+
+    const C = {
+      slate:  { bg: '#f1f5f9', border: '#e2e8f0', fg: '#334155', dot: '#94a3b8' },
+      amber:  { bg: '#fffbeb', border: '#fde68a', fg: '#92400e', dot: '#d97706' },
+      emerald:{ bg: '#ecfdf5', border: '#a7f3d0', fg: '#065f46', dot: '#059669' },
+      red:    { bg: '#fef2f2', border: '#fecaca', fg: '#991b1b', dot: '#dc2626' },
+      blue:   { bg: '#eff6ff', border: '#bfdbfe', fg: '#1e40af', dot: '#2563eb' },
+      brand:  { bg: '#eff5fb', border: '#d6e5f4', fg: '#0a3d6e', dot: '#1a6bb8' },
+    };
+
+    const tiles = [
+      { label: 'Total',         count: 8, ...C.brand },
+      { label: 'Not submitted', count: 2, ...C.slate },
+      { label: 'Approved',      count: 2, ...C.emerald },
+      { label: 'Rejected',      count: 1, ...C.red },
+      { label: 'Scheduled',     count: 1, ...C.blue },
+    ];
+
+    const queue = [
+      {
+        programme: 'M.Sc. Physics',
+        department: 'Physics',
+        courses: 6,
+        badgeLabel: 'Submitted',
+        badgeBg: C.amber.bg, badgeFg: C.amber.fg, badgeRing: C.amber.border,
+        waited: 'waiting 4 days',
+        peopleLabel: 'Nominated',
+        people: ['Dr. G. Mohan', 'Dr. N. Sridevi'],
+        primaryLabel: 'Approve', primaryBg: '#059669',
+        secondaryLabel: 'Reject',
+      },
+      {
+        programme: 'M.A. English',
+        department: 'English',
+        courses: 5,
+        badgeLabel: 'Submitted',
+        badgeBg: C.amber.bg, badgeFg: C.amber.fg, badgeRing: C.amber.border,
+        waited: 'waiting 1 day',
+        peopleLabel: 'Nominated',
+        people: ['Dr. S. Meera', 'Dr. P. Iyer', 'Dr. A. Kulkarni'],
+        primaryLabel: 'Approve', primaryBg: '#059669',
+        secondaryLabel: 'Reject',
+      },
+      {
+        programme: 'M.Sc. Biosciences',
+        department: 'Biosciences',
+        courses: 7,
+        badgeLabel: 'Approved',
+        badgeBg: C.emerald.bg, badgeFg: C.emerald.fg, badgeRing: C.emerald.border,
+        waited: 'no dates offered yet',
+        peopleLabel: 'Board',
+        people: ['Dr. K. Anitha', 'Dr. R. Bhat'],
+        primaryLabel: 'Offer dates', primaryBg: '#0c5196',
+        secondaryLabel: 'Open',
+      },
+    ];
+
+    // Three segments: Submitted -> Approved -> Scheduled.
+    const track = (filled, color) =>
+      [0, 1, 2].map((i) => ({ color: i < filled ? color : '#e2e8f0' }));
+
+    const rows = [
+      { programme: 'M.Sc. Physics', department: 'Physics', degree: 'M.Sc.',
+        filled: 1, color: C.amber.dot, badgeFg: C.amber.fg, statusLabel: 'Submitted',
+        stageHint: 'Awaiting your approval',
+        submittedBy: 'Dr. V. Ramesh', session: '—',
+        members: ['Dr. G. Mohan', 'Dr. N. Sridevi'] },
+
+      { programme: 'M.A. English', department: 'English', degree: 'M.A.',
+        filled: 1, color: C.amber.dot, badgeFg: C.amber.fg, statusLabel: 'Submitted',
+        stageHint: 'Awaiting your approval',
+        submittedBy: 'Dr. S. Meera', session: '—',
+        members: ['Dr. P. Iyer', 'Dr. A. Kulkarni'] },
+
+      { programme: 'M.Sc. Biosciences', department: 'Biosciences', degree: 'M.Sc.',
+        filled: 2, color: C.emerald.dot, badgeFg: C.emerald.fg, statusLabel: 'Approved',
+        stageHint: 'Needs session dates',
+        submittedBy: 'Dr. K. Anitha', session: '—',
+        members: ['Dr. R. Bhat'] },
+
+      { programme: 'M.Tech. Computer Science', department: 'Computer Science', degree: 'M.Tech.',
+        filled: 2, color: C.emerald.dot, badgeFg: C.emerald.fg, statusLabel: 'Approved',
+        stageHint: 'Dates offered — with the HoD',
+        submittedBy: 'Dr. M. Anand', session: '14, 15, 18 Sep offered',
+        members: ['Dr. T. Suresh', 'Dr. J. Padma', 'Dr. H. Gopal'] },
+
+      { programme: 'B.Sc. Mathematics (Hons.)', department: 'Mathematics', degree: 'B.Sc.',
+        filled: 3, color: C.blue.dot, badgeFg: C.blue.fg, statusLabel: 'Scheduled',
+        stageHint: 'Complete',
+        submittedBy: 'Dr. R. Krishnan', session: '02 & 03 Sep, 9:30 AM',
+        members: ['Dr. S. Venkataraman', 'Dr. A. Narayan'] },
+
+      { programme: 'M.Sc. Chemistry', department: 'Chemistry', degree: 'M.Sc.',
+        filled: 1, color: C.red.dot, badgeFg: C.red.fg, statusLabel: 'Rejected',
+        stageHint: 'Sent back — with the HoD',
+        submittedBy: 'Dr. D. Shanthi', session: '—',
+        members: ['Dr. L. Prakash'] },
+
+      { programme: 'M.Sc. Mathematics', department: 'Mathematics', degree: 'M.Sc.',
+        filled: 0, color: C.slate.dot, badgeFg: '#475569', statusLabel: 'Not Submitted',
+        stageHint: 'Not yet constituted',
+        submittedBy: '—', session: '—', members: [] },
+
+      { programme: 'M.B.A.', department: 'Management', degree: 'M.B.A.',
+        filled: 0, color: C.slate.dot, badgeFg: '#475569', statusLabel: 'Not Submitted',
+        stageHint: 'Not yet constituted',
+        submittedBy: '—', session: '—', members: [] },
+    ].map((r) => ({ ...r, track: track(r.filled, r.color) }));
+
+    return {
+      tiles,
+      queue,
+      rows,
+      pad: compact ? '7px' : '13px',
+      comfyBg: compact ? '#ffffff' : '#0c5196',
+      comfyFg: compact ? '#475569' : '#ffffff',
+      compactBg: compact ? '#0c5196' : '#ffffff',
+      compactFg: compact ? '#ffffff' : '#475569',
+    };
+  }
+}
+</script>
+</body>
+</html>
