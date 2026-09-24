@@ -10,14 +10,22 @@
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+
+    // Without this, the SPA fallback swallows every *navigation* to /api/*.
+    // Assets are matched before the Worker runs, and `single-page-application`
+    // answers anything that isn't a file with index.html — so a browser
+    // following a link to /api/auth/login got the React app instead of the
+    // redirect to Google, and the Worker was never invoked. fetch()/XHR was
+    // unaffected, which is what made it look like a client-side bug.
+    "run_worker_first": ["/api/*"]
   },
 
   "observability": { "enabled": true },
 
   // Catalogue cache + cached service-account access token. See docs/ARCHITECTURE.md §8.
   "kv_namespaces": [
-    { "binding": "CACHE", "id": "TODO_CREATE_WITH_wrangler_kv_namespace_create_CACHE" }
+    { "binding": "CACHE", "id": "a0d9dfc778294d68982e07ca79699ea3" }
   ],
 
   // BOARD_LOCK: one instance per boardId serialises writes to Sheets. See §7.
@@ -36,16 +44,29 @@
   ],
 
   "vars": {
-    // Serves in-memory fixtures and enables ?as= role switching.
-    // MUST be "false" before the first production deploy.
-    "DEV_MODE": "true",
+    // Where board data comes from: "sheets" (live workbook) or "fixtures"
+    // (in-memory sample data). Authentication is ALWAYS real Google OIDC —
+    // this flag does not affect sign-in.
+    "DATA_SOURCE": "fixtures",
     "GOOGLE_WORKSPACE_DOMAIN": "sssihl.edu.in",
     "SPREADSHEET_ID": "TODO",
     "DRIVE_ROOT_FOLDER_ID": "TODO",
 
     // Where the support desk emails a HoD's unanswered question. Until this
     // is a real address the notification is logged instead of sent.
-    "SUPPORT_NOTIFY_EMAIL": "TODO_SET_COE_OFFICE_EMAIL"
+    "SUPPORT_NOTIFY_EMAIL": "TODO_SET_COE_OFFICE_EMAIL",
+
+    // Board notifications to the office. Comma-separated: the first address
+    // is written to, the rest are copied — the same three the Apps Script
+    // portal used, in the same order.
+    "ADMIN_NOTIFY_EMAILS": "eddrsmaster@sssihl.edu.in,controller@sssihl.edu.in,dycontroller@sssihl.edu.in",
+
+    // Base URL for the "open the portal" links in emails.
+    "PORTAL_URL": "TODO_SET_PORTAL_URL",
+
+    // Appended to email subjects, e.g. "April 2026". Blank is fine — the
+    // subject simply omits it.
+    "EXAM_PERIOD": ""
   }
 
   // Secrets (never here — use `wrangler secret put NAME`):

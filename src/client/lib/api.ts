@@ -26,33 +26,45 @@ export class ApiError extends Error {
   }
 }
 
-const DEV_USER_STORAGE_KEY = 'qpsb.devUser';
-
 /**
- * Development affordance: ?as=<email> in the page URL makes every API call
- * run as that user. It is remembered for the tab, because client-side
- * navigation drops the query string. The server honours the parameter only
- * when DEV_MODE is on, so this is inert in production.
+ * Sends the person to Google, remembering where they were.
+ *
+ * `next` is the current in-app path, so a session that expires on
+ * /admin/boards returns there rather than dumping them on the home screen.
+ * The server accepts it only when it is a same-site path.
  */
-export function withDevUser(path: string): string {
-  const fromUrl = new URLSearchParams(window.location.search).get('as');
-  if (fromUrl) sessionStorage.setItem(DEV_USER_STORAGE_KEY, fromUrl);
+export function redirectToLogin(): void {
+  const { pathname, search } = window.location;
 
-  const as = fromUrl ?? sessionStorage.getItem(DEV_USER_STORAGE_KEY);
-  if (!as) return path;
+  // Never return to an API path. Without this the login URL nests inside its
+  // own `next` once per attempt — click twice from a failed sign-in and the
+  // address bar fills with escaped copies of itself.
+  const next = pathname.startsWith('/api/') ? '/' : pathname + search;
 
-  const separator = path.includes('?') ? '&' : '?';
-  return `${path}${separator}as=${encodeURIComponent(as)}`;
+  window.location.href = `/api/auth/login?next=${encodeURIComponent(next)}`;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`/api${withDevUser(path)}`, {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  /**
+   * Whether a 401 should bounce straight to Google.
+   *
+   * The session probe sets this false: on first load nobody is signed in
+   * yet, and redirecting from there means the app never renders a sign-in
+   * screen — it flashes "Checking access…" and jumps, which looks like a
+   * fault rather than a prompt. Every other call keeps the redirect, because
+   * a 401 there means a session expired mid-use.
+   */
+  redirectOn401 = true,
+): Promise<T> {
+  const res = await fetch(`/api${path}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   });
 
   if (res.status === 401) {
-    window.location.href = '/api/auth/login';
+    if (redirectOn401) redirectToLogin();
     throw new ApiError(401, 'Not signed in');
   }
 
@@ -69,6 +81,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
+  /** Resolves to null when nobody is signed in, instead of redirecting. */
+  getSession: async <T>(path: string): Promise<T | null> => {
+    try {
+      return await request<T>(path, undefined, false);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) return null;
+      throw error;
+    }
+  },
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),

@@ -14,6 +14,7 @@ import type { Role, SessionUser } from '@shared/types';
 import { useSession } from '@/lib/hooks';
 import { SupportProvider, useAdminUnreadCount } from '@/lib/support';
 import { HelpChatWidget } from './help-chat/HelpChatWidget';
+import { SignInScreen } from './SignInScreen';
 import { LoadingState } from './ui/states';
 
 interface NavEntry {
@@ -28,15 +29,18 @@ const NAV: NavEntry[] = [
   { to: '/admin', label: 'Admin Portal', roles: ['admin'] },
   { to: '/faculty', label: 'Faculty Overrides', roles: ['admin'] },
   { to: '/support', label: 'Support Desk', roles: ['admin'], badge: 'supportUnread' },
-  { to: '/constitution', label: 'QPSB Constitution', roles: ['hod', 'viewer'] },
+  // Admin sees this read-only, to follow what a HoD is looking at.
+  { to: '/constitution', label: 'QPSB Constitution', roles: ['hod', 'viewer', 'admin'] },
   { to: '/checker', label: 'File Checker', roles: ['admin', 'hod', 'viewer'] },
 ];
 
 export function AppLayout() {
   const { data: user, isPending } = useSession();
 
+  // `null` means signed out and `undefined` means still loading; the support
+  // provider only distinguishes "have a user" from "don't", so both collapse.
   return (
-    <SupportProvider user={user}>
+    <SupportProvider user={user ?? undefined}>
       <div className="min-h-full">
         {/* Sticky and compact: the logo used to sit centred at h-28 on a row of
             its own, spending ~180px of every screen before any content. */}
@@ -62,7 +66,15 @@ export function AppLayout() {
         </header>
 
         <main className="mx-auto max-w-7xl px-4 py-6">
-          {isPending ? <LoadingState label="Checking access…" /> : <Outlet />}
+          {isPending ? (
+            <LoadingState label="Checking access…" />
+          ) : user ? (
+            <Outlet />
+          ) : (
+            // Signed out is a state the app renders, not one it redirects
+            // out of — see SignInScreen.
+            <SignInScreen />
+          )}
         </main>
 
         {user?.role === 'hod' && <HelpChatWidget />}

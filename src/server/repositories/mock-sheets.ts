@@ -43,10 +43,10 @@ export function resetMockData(): void {
 }
 
 function toSummary(b: BoardDetail): BoardSummary {
-  const { boardId, degree, degreeShort, department, programme, status, courseCount, submittedBy, submittedAt, members, availableDates, sessionTime, changesRequested, closed, version } = b;
+  const { boardId, degree, degreeShort, department, programme, status, courseCount, submittedBy, submittedAt, members, availableDates, sessionTime, changesRequested, filesCompleteAt, closed, version } = b;
   return {
     boardId, degree, degreeShort, department, programme, status, courseCount,
-    submittedBy, submittedAt, sessionTime, changesRequested, closed, version,
+    submittedBy, submittedAt, sessionTime, changesRequested, filesCompleteAt, closed, version,
     // Cloned so a caller mutating the summary cannot reach into the board.
     members: [...members],
     availableDates: availableDates.map((d) => ({ ...d })),
@@ -397,6 +397,23 @@ export function createMockRepo(): BoardRepo {
       board.version += 1;
 
       record(board, actor, 'requestChanges', before);
+      return board;
+    },
+
+    async markFilesComplete(boardId, actor) {
+      const board = mustFind(boardId);
+
+      // Idempotent and unversioned on purpose: this records that the files
+      // were finished, and a second press is the same fact. Failing it on a
+      // stale version would mean a HoD with a tab open gets an error for
+      // telling the truth.
+      if (board.filesCompleteAt) return board;
+
+      const before = structuredClone(board);
+      board.filesCompleteAt = new Date().toISOString();
+      board.version += 1;
+
+      record(board, actor, 'markFilesComplete', before);
       return board;
     },
 

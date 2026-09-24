@@ -1,9 +1,9 @@
 /**
  * Repository factory — the single seam between mock and live data.
  *
- * When DEV_MODE is on we serve fixtures; otherwise we mint a Google access
- * token and talk to Sheets. This is the one line that changes when
- * credentials arrive.
+ * `DATA_SOURCE` picks the implementation: fixtures for a demo or a test, the
+ * live workbook otherwise. It does not touch authentication — sign-in is real
+ * Google OIDC on every environment.
  */
 import type { Env } from '../env';
 import { getAccessToken } from '../google/sa-token';
@@ -17,8 +17,13 @@ import type { DriveRepo } from './drive-types';
 export type { BoardRepo } from './types';
 export type { DriveRepo } from './drive-types';
 
+/** True when this deployment is serving sample data rather than the workbook. */
+export function usingFixtures(env: Env['Bindings']): boolean {
+  return env.DATA_SOURCE !== 'sheets';
+}
+
 export async function getRepo(env: Env['Bindings']): Promise<BoardRepo> {
-  if (env.DEV_MODE === 'true') return createMockRepo();
+  if (usingFixtures(env)) return createMockRepo();
 
   const accessToken = await getAccessToken(env.CACHE, {
     clientEmail: env.GOOGLE_SA_EMAIL,
@@ -29,7 +34,7 @@ export async function getRepo(env: Env['Bindings']): Promise<BoardRepo> {
 }
 
 export async function getDriveRepo(env: Env['Bindings']): Promise<DriveRepo> {
-  if (env.DEV_MODE === 'true') return createMockDriveRepo();
+  if (usingFixtures(env)) return createMockDriveRepo();
 
   const accessToken = await getAccessToken(env.CACHE, {
     clientEmail: env.GOOGLE_SA_EMAIL,

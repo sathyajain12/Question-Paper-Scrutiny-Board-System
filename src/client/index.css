@@ -70,3 +70,34 @@ body {
     opacity: 0.6;
   }
 }
+
+/*
+ * Overdue board rows — the post-QPSB files were never confirmed.
+ *
+ * A pulse rather than a hard blink. WCAG 2.3.1 caps flashing at three times
+ * a second, and anything near that is both a seizure risk and genuinely hard
+ * to read across; this crosses the row about once every 1.6s and never drops
+ * the text below full contrast. The row is red with a written badge either
+ * way, so the motion only draws the eye — it never carries the meaning.
+ */
+@keyframes qpsb-overdue-pulse {
+  0%,
+  100% {
+    background-color: rgb(254 242 242); /* red-50 */
+  }
+  50% {
+    background-color: rgb(254 202 202); /* red-200 */
+  }
+}
+
+.qpsb-overdue {
+  animation: qpsb-overdue-pulse 1.6s ease-in-out infinite;
+}
+
+/* Colour and badge still identify the row; only the motion goes. */
+@media (prefers-reduced-motion: reduce) {
+  .qpsb-overdue {
+    animation: none;
+    background-color: rgb(254 226 226); /* red-100 */
+  }
+}

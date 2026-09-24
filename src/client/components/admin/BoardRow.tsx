@@ -1,5 +1,6 @@
-import { ChevronRight } from 'lucide-react';
+import { AlertTriangle, ChevronRight } from 'lucide-react';
 import type { BoardSummary } from '@shared/types';
+import { filesOverdue, overdueLabel } from '@shared/domain/board-overdue';
 import { formatDateDMY } from '@/lib/format';
 import { StatusTrack } from '../ui/StatusTrack';
 
@@ -53,14 +54,33 @@ export function BoardRow({
 }) {
   const pad = compact ? 'px-3 py-1.5' : 'px-3 py-3';
 
+  // The session has been held and the HoD still hasn't confirmed the files.
+  const overdue = filesOverdue(summary);
+  const lateBy = overdueLabel(summary);
+
+  const rowTone = overdue
+    ? 'bg-red-50 hover:bg-red-100 qpsb-overdue'
+    : open
+      ? 'bg-brand-50'
+      : 'hover:bg-slate-50';
+
   return (
     <tr
       aria-current={open ? 'true' : undefined}
-      className={`align-middle transition ${open ? 'bg-brand-50' : 'hover:bg-slate-50'}`}
+      className={`align-middle transition ${rowTone}`}
     >
       <td className={pad}>
         <p className="font-semibold text-brand-600">{summary.programme}</p>
         <p className="text-xs text-slate-500">{summary.department}</p>
+
+        {overdue && (
+          // The colour alone would not reach a screen reader, or anyone who
+          // cannot distinguish it — so the reason is written out too.
+          <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white">
+            <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+            Files not confirmed · {lateBy}
+          </p>
+        )}
       </td>
 
       <td className={`${pad} text-slate-600`}>{summary.degreeShort}</td>

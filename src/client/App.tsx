@@ -24,7 +24,10 @@ export default function App() {
         <Route
           path="constitution"
           element={
-            <RequireRole roles={['hod', 'viewer']}>
+            // Admin is here to observe, not to act — the page renders
+            // read-only for them, and the server still refuses the HoD's
+            // mutations regardless of what the client shows.
+            <RequireRole roles={['hod', 'viewer', 'admin']}>
               <ConstitutionPage />
             </RequireRole>
           }
@@ -69,8 +72,10 @@ export default function App() {
 function HomeRedirect() {
   const { data: user, isPending } = useSession();
 
-  if (isPending) return <LoadingState label="Signing in…" />;
-  if (!user) return <LoadingState label="Redirecting to sign in…" />;
+  if (isPending) return <LoadingState label="Checking access…" />;
+  // AppLayout renders the sign-in screen around this outlet, so an
+  // unauthenticated visitor needs nothing here.
+  if (!user) return null;
 
   return <Navigate to={user.role === 'admin' ? '/admin' : '/constitution'} replace />;
 }

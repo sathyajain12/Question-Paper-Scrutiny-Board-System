@@ -11,33 +11,31 @@ import { getCookie } from 'hono/cookie';
 import type { Env } from '../env';
 import type { Role } from '@shared/types';
 import { getRepo } from '../repositories';
+import { SESSION_COOKIE, readSessionToken } from '../auth/session';
 
-export const SESSION_COOKIE = 'qpsb_session';
+export { SESSION_COOKIE };
 
-/** Development only — lets you switch role without a Google login. */
-export const DEV_USER_COOKIE = 'qpsb_dev_user';
-const DEFAULT_DEV_USER = 'hod.cs@sssihl.edu.in';
-
-/** Verifies the session and populates c.var.user. */
+/**
+ * Verifies the session cookie and populates `c.var.user`.
+ *
+ * There is deliberately no bypass here. An earlier version let `?as=<email>`
+ * assume any identity when DEV_MODE was on, which meant a single misconfigured
+ * variable turned the deployment into an open admin console. One code path
+ * now, on every environment: no cookie, no session.
+ */
 export const requireSession = createMiddleware<Env>(async (c, next) => {
-  if (c.env.DEV_MODE === 'true') {
-    // Impersonation is gated on DEV_MODE, which is never set in production.
-    const email =
-      c.req.query('as') ?? getCookie(c, DEV_USER_COOKIE) ?? DEFAULT_DEV_USER;
+  const token = getCookie(c, SESSION_COOKIE);
+  if (!token) return c.json({ error: 'Not signed in' }, 401);
 
-    const repo = await getRepo(c.env);
-    const user = await repo.findUserAccess(email);
-    if (!user) return c.json({ error: `Unknown dev user: ${email}` }, 401);
-
-    c.set('user', user);
-    return next();
+  const user = await readSessionToken(token, c.env.SESSION_SIGNING_KEY);
+  if (!user) {
+    // Expired, tampered with, or signed by a key that has since rotated —
+    // all the same to the caller, who needs to sign in again either way.
+    return c.json({ error: 'Your session has expired. Please sign in again.' }, 401);
   }
 
-  // TODO Phase 1:
-  //   1. read SESSION_COOKIE
-  //   2. jwtVerify against SESSION_SIGNING_KEY (jose)
-  //   3. c.set('user', payload) or 401
-  return c.json({ error: 'Not signed in' }, 401);
+  c.set('user', user);
+  await next();
 });
 
 /** Gate an endpoint to specific roles. */

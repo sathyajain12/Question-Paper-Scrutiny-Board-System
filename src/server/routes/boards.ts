@@ -9,10 +9,23 @@
  * today the repository performs the version check directly.
  */
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import type { Env } from '../env';
 import { requireRole, requireBoardAccess } from '../middleware/auth';
 import { getRepo } from '../repositories';
+import {
+  notifyBoardApproved,
+  notifyBoardClosed,
+  notifyBoardRejected,
+  notifyBoardSubmitted,
+  notifyChangesIncorporated,
+  notifyChangesRequested,
+  notifyDatesOffered,
+  notifyFilesComplete,
+  notifyScheduleConfirmed,
+  sendAppointmentLetter,
+} from '../notifications/board-notifications';
 import {
   acknowledgeChangesSchema,
   approveBoardSchema,
@@ -25,6 +38,23 @@ import {
 } from '@shared/schemas/board';
 
 const boards = new Hono<Env>();
+
+/**
+ * Send a notification without making the caller wait for the mail provider.
+ *
+ * The board has already changed by the time we get here, so the user should
+ * get their response now; `waitUntil` keeps the worker alive for the send.
+ * The fallback covers runtimes that expose no execution context — the
+ * notification helpers swallow their own errors, so a floating promise here
+ * cannot produce an unhandled rejection.
+ */
+function inBackground(c: Context<Env>, work: Promise<void>): void {
+  try {
+    c.executionCtx.waitUntil(work);
+  } catch {
+    void work;
+  }
+}
 
 /** Role-scoped list + dashboard counts, in one round trip. */
 boards.get('/', async (c) => {
@@ -58,13 +88,16 @@ boards.post(
   zValidator('json', submitConstitutionSchema),
   async (c) => {
     const { facultyEmails, version } = c.req.valid('json');
+    const user = c.get('user');
     const repo = await getRepo(c.env);
     const board = await repo.submitConstitution(
       c.req.param('boardId'),
-      c.get('user'),
+      user,
       facultyEmails,
       version,
     );
+
+    inBackground(c, notifyBoardSubmitted(c.env, board, user));
     return c.json({ board });
   },
 );
@@ -80,6 +113,8 @@ boards.post(
       c.get('user'),
       c.req.valid('json').version,
     );
+
+    inBackground(c, notifyBoardApproved(c.env, repo, board));
     return c.json({ board });
   },
 );
@@ -97,6 +132,8 @@ boards.post(
       reason,
       version,
     );
+
+    inBackground(c, notifyBoardRejected(c.env, repo, board, reason));
     return c.json({ board });
   },
 );
@@ -114,6 +151,8 @@ boards.post(
       dates,
       version,
     );
+
+    inBackground(c, notifyDatesOffered(c.env, repo, board, dates));
     return c.json({ board });
   },
 );
@@ -125,14 +164,17 @@ boards.post(
   zValidator('json', confirmScheduleSchema),
   async (c) => {
     const { dates, time, version } = c.req.valid('json');
+    const user = c.get('user');
     const repo = await getRepo(c.env);
     const board = await repo.confirmSchedule(
       c.req.param('boardId'),
-      c.get('user'),
+      user,
       dates,
       time,
       version,
     );
+
+    inBackground(c, notifyScheduleConfirmed(c.env, board, user, dates, time));
     return c.json({ board });
   },
 );
@@ -145,9 +187,14 @@ boards.post(
     const boardId = c.req.param('boardId');
     const user = c.get('user');
 
-    console.log(`[Notification] HoD ${user.email} notified admin that board ${boardId} post-QPSB files are complete.`);
-
     const repo = await getRepo(c.env);
+
+    // Recorded on the board, not only in the log: this is what stops the
+    // overdue clock the admin portal reads (shared/domain/board-overdue.ts).
+    const board = await repo.markFilesComplete(boardId, user);
+
+    inBackground(c, notifyFilesComplete(c.env, board, user));
+
     await repo.appendAuditLog({
       timestamp: new Date().toISOString(),
       actorEmail: user.email,
@@ -157,7 +204,7 @@ boards.post(
       afterJson: JSON.stringify({ notified: true }),
     });
 
-    return c.json({ success: true, message: 'Admin notified that files are complete.' });
+    return c.json({ board, success: true, message: 'Admin notified that files are complete.' });
   }
 );
 
@@ -173,6 +220,8 @@ boards.post(
       c.get('user'),
       c.req.valid('json').version,
     );
+
+    inBackground(c, notifyChangesRequested(c.env, repo, board));
     return c.json({ board });
   },
 );
@@ -194,7 +243,7 @@ boards.post(
       c.req.valid('json').version,
     );
 
-    console.log(`[Notification] HoD ${user.email} notified admin that corrections for board ${boardId} are incorporated.`);
+    inBackground(c, notifyChangesIncorporated(c.env, board, user));
     await repo.appendAuditLog({
       timestamp: new Date().toISOString(),
       actorEmail: user.email,
@@ -228,7 +277,7 @@ boards.post(
 
     const board = await repo.closeBoard(boardId, user, c.req.valid('json').version);
 
-    console.log(`[Notification] Admin ${user.email} closed board ${boardId} — Drive access revoked, HoD notified.`);
+    inBackground(c, notifyBoardClosed(c.env, repo, board));
     await repo.appendAuditLog({
       timestamp: new Date().toISOString(),
       actorEmail: user.email,
@@ -242,9 +291,48 @@ boards.post(
   },
 );
 
-boards.post('/:boardId/appointment-email', requireRole('admin'), (c) => {
-  void c;
-  throw new Error('appointment email not implemented'); // Phase 5
+/**
+ * Send the appointment letter to the chairperson and members.
+ *
+ * Deliberately not fire-and-forget: pressing this button has no effect other
+ * than the email, so the admin has to be told whether it actually went. The
+ * board must be Locked — the letter states the date, and a board without a
+ * confirmed schedule has none to state.
+ */
+boards.post('/:boardId/appointment-email', requireRole('admin'), async (c) => {
+  const repo = await getRepo(c.env);
+  const board = await repo.getBoard(c.req.param('boardId'));
+  if (!board) return c.json({ error: 'Board not found' }, 404);
+
+  if (board.status !== 'Locked') {
+    return c.json(
+      {
+        error: `The appointment letter can only be sent once the board is Locked. This board is ${board.status}.`,
+      },
+      409,
+    );
+  }
+
+  const result = await sendAppointmentLetter(c.env, repo, board);
+
+  await repo.appendAuditLog({
+    timestamp: new Date().toISOString(),
+    actorEmail: c.get('user').email,
+    action: 'send_appointment_email',
+    boardId: board.boardId,
+    beforeJson: JSON.stringify({ sent: false }),
+    afterJson: JSON.stringify({ sent: result.sent, recipients: result.recipients }),
+  });
+
+  if (!result.sent) {
+    return c.json({ sent: false, recipients: result.recipients, message: result.reason }, 200);
+  }
+
+  return c.json({
+    sent: true,
+    recipients: result.recipients,
+    message: `Appointment letter sent to ${result.recipients.length} recipient(s).`,
+  });
 });
 
 export default boards;

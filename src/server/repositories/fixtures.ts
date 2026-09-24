@@ -91,6 +91,7 @@ export const FIXTURE_BOARDS: BoardDetail[] = [
     actionAt: null,
     rejectionReason: null,
     changesRequested: false,
+    filesCompleteAt: null,
     closed: false,
     version: 1,
   },
@@ -116,6 +117,7 @@ export const FIXTURE_BOARDS: BoardDetail[] = [
     actionAt: null,
     rejectionReason: null,
     changesRequested: false,
+    filesCompleteAt: null,
     closed: false,
     version: 3,
   },
@@ -146,6 +148,7 @@ export const FIXTURE_BOARDS: BoardDetail[] = [
     actionAt: '2026-08-08T15:40:00Z',
     rejectionReason: null,
     changesRequested: false,
+    filesCompleteAt: null,
     closed: false,
     version: 5,
   },
@@ -169,6 +172,7 @@ export const FIXTURE_BOARDS: BoardDetail[] = [
     rejectionReason:
       'Only one faculty member nominated. The Board requires two or three senior faculty per academic programme.',
     changesRequested: false,
+    filesCompleteAt: null,
     closed: false,
     version: 4,
   },
@@ -200,6 +204,7 @@ export const FIXTURE_BOARDS: BoardDetail[] = [
     // True in fixtures so the HoD's "Changes Fixed" button is reachable
     // without first driving the admin's "Notify Changes" action.
     changesRequested: true,
+    filesCompleteAt: null,
     closed: false,
     version: 8,
   },
@@ -236,6 +241,14 @@ export const FIXTURE_FACULTY_OVERRIDES: FacultyOverride[] = [
 /** Who can sign in during development. Mirrors the `Access` tab. */
 export const FIXTURE_ACCESS = [
   { email: 'coe@sssihl.edu.in', name: 'Controller of Examinations', role: 'admin' as const, departments: [] },
+  {
+    // The real EDDRS office account. Present so a live Google sign-in can be
+    // tested against a fixtures deployment, before the Access tab exists.
+    email: 'eddrsmaster@sssihl.edu.in',
+    name: 'EDDRS Master',
+    role: 'admin' as const,
+    departments: [],
+  },
   {
     email: 'hod.maths@sssihl.edu.in',
     name: 'Dr. R. Krishnan',

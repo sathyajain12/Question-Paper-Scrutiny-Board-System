@@ -104,6 +104,14 @@ export interface BoardSummary {
   sessionTime: string | null;
   /** Set when the admin flags the post-QPSB files for correction. */
   changesRequested: boolean;
+  /**
+   * When the HoD confirmed the post-QPSB files are complete — ISO timestamp,
+   * or null if they have not. This is what stops the overdue clock that
+   * starts at the session date (see domain/board-overdue.ts); before it
+   * existed the "Notify admin" button only wrote a log line, so nothing
+   * downstream could tell a finished board from a forgotten one.
+   */
+  filesCompleteAt: string | null;
   /** Set once the admin closes the board after the session. Irreversible. */
   closed: boolean;
   /** Optimistic-concurrency token — echo back on every mutation. See §7. */

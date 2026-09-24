@@ -7,48 +7,98 @@
  * appointment letters in Phase 5 are the next one, and they should come
  * through here rather than growing a second path.
  *
- * In DEV_MODE, and whenever the key or the recipient is unset, this logs
- * instead of sending. That matches how every other notification in this
- * codebase currently behaves (`notify-admin`, `request-changes`, `close`) and
- * means the workflow is wired end to end before credentials exist — the
- * alternative, throwing, would make the desk unusable in development.
+ * Whenever the API key or the recipient is unset, this logs the message
+ * instead of sending it. That means the workflow is wired end to end before
+ * credentials exist — the alternative, throwing, would make the support desk
+ * and every board action unusable in development.
  */
 import type { Env } from '../env';
 
 export interface OutboundEmail {
-  to: string;
+  to: string | string[];
   subject: string;
   /** Plain text. Keep it short — these are prompts to go and look, not reports. */
   text: string;
+  /**
+   * Optional HTML alternative. Every board notification sends both: the text
+   * part is what lands in a plain-text client and in the dev-mode log, so it
+   * has to carry the same facts rather than say "see the HTML version".
+   */
+  html?: string;
+  cc?: string | string[];
+}
+
+/** An addressee plus the people copied — what the notification layer resolves to. */
+export interface RenderedEmailRecipients {
+  to: string;
+  cc: string[];
 }
 
 export type MailResult =
   | { sent: true }
-  | { sent: false; reason: 'dev-mode' | 'not-configured' | 'failed'; detail?: string };
+  | {
+      sent: false;
+      reason: 'not-configured' | 'no-recipient' | 'failed';
+      detail?: string;
+    };
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 
-/** The COE office address is a placeholder until IT supplies the real one. */
+/**
+ * A configured address is one someone will actually receive. The seeded
+ * placeholders read `TODO_...`, and sending to those is worse than dropping
+ * the mail — it looks delivered and isn't.
+ */
+export function isRealAddress(address: string | undefined | null): boolean {
+  if (!address) return false;
+  const trimmed = address.trim();
+  return trimmed.length > 0 && !trimmed.startsWith('TODO') && trimmed.includes('@');
+}
+
+/** Can the transport send at all? Per-recipient validity is checked separately. */
 export function isMailConfigured(env: Env['Bindings']): boolean {
-  return Boolean(
-    env.RESEND_API_KEY &&
-      env.SUPPORT_NOTIFY_EMAIL &&
-      !env.SUPPORT_NOTIFY_EMAIL.startsWith('TODO'),
-  );
+  return Boolean(env.RESEND_API_KEY);
+}
+
+function recipients(value: string | string[] | undefined): string[] {
+  if (!value) return [];
+  const list = Array.isArray(value) ? value : [value];
+  // Dedupe case-insensitively: the HoD is usually also a board member, and a
+  // duplicated address makes Resend reject the whole message.
+  const seen = new Set<string>();
+  return list
+    .map((address) => address.trim())
+    .filter((address) => {
+      if (!isRealAddress(address)) return false;
+      const key = address.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 export async function sendEmail(
   env: Env['Bindings'],
   email: OutboundEmail,
 ): Promise<MailResult> {
-  if (env.DEV_MODE === 'true') {
-    console.log(`[Mail·dev] to=${email.to} subject=${email.subject}\n${email.text}`);
-    return { sent: false, reason: 'dev-mode' };
+  const to = recipients(email.to);
+  const cc = recipients(email.cc).filter(
+    (address) => !to.some((t) => t.toLowerCase() === address.toLowerCase()),
+  );
+
+  if (to.length === 0) {
+    console.warn(`[Mail] No usable recipient — dropped "${email.subject}".`);
+    return { sent: false, reason: 'no-recipient' };
   }
 
+  // No API key is the normal state in development, so log the whole message
+  // rather than a one-line warning — this is how the workflow gets reviewed
+  // before credentials exist.
   if (!isMailConfigured(env)) {
-    console.warn(
-      `[Mail] Not configured — dropped "${email.subject}". Set RESEND_API_KEY and SUPPORT_NOTIFY_EMAIL.`,
+    console.log(
+      `[Mail·unsent] to=${to.join(', ')}` +
+        (cc.length ? ` cc=${cc.join(', ')}` : '') +
+        `\nsubject=${email.subject}\n${email.text}`,
     );
     return { sent: false, reason: 'not-configured' };
   }
@@ -62,9 +112,11 @@ export async function sendEmail(
       },
       body: JSON.stringify({
         from: `QPSB Portal <no-reply@${env.GOOGLE_WORKSPACE_DOMAIN}>`,
-        to: [email.to],
+        to,
+        ...(cc.length ? { cc } : {}),
         subject: email.subject,
         text: email.text,
+        ...(email.html ? { html: email.html } : {}),
       }),
     });
 

@@ -130,6 +130,14 @@ export interface BoardRepo {
     expectedVersion: number,
   ): Promise<BoardDetail>;
 
+  /**
+   * HoD confirms the post-QPSB files are complete, stopping the overdue
+   * clock. Idempotent — pressing it twice keeps the first timestamp, since
+   * the question it answers is "when was this finished", not "how often was
+   * the button pressed".
+   */
+  markFilesComplete(boardId: string, actor: SessionUser): Promise<BoardDetail>;
+
   /** HoD confirms the flagged corrections are done, clearing the flag. */
   acknowledgeChanges(
     boardId: string,

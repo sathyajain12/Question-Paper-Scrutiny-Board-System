@@ -32,7 +32,6 @@ import type {
 } from '@shared/types';
 import type { SupportClientFrame } from '@shared/schemas/support';
 import { TYPING_THROTTLE_MS, TYPING_TTL_MS } from '@shared/constants/support';
-import { withDevUser } from './api';
 import type { PreparedImage } from './image';
 
 /** Who is currently typing in a conversation, as far as this client knows. */
@@ -118,9 +117,9 @@ const HEARTBEAT_MS = 30_000;
 
 function socketUrl(): string {
   const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  // withDevUser keeps ?as= impersonation working on the socket exactly as it
-  // does on fetch — otherwise the desk would always see the default dev user.
-  return `${scheme}//${window.location.host}/api${withDevUser('/support/ws')}`;
+  // The socket carries the session cookie like any same-origin request, so
+  // the desk sees whoever is signed in — no identity travels in the URL.
+  return `${scheme}//${window.location.host}/api/support/ws`;
 }
 
 export function SupportProvider({

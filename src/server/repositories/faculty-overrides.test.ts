@@ -10,8 +10,18 @@ import { createMockRepo, resetMockData } from './mock-sheets';
 import { FIXTURE_ACCESS } from './fixtures';
 import type { SessionUser } from '@shared/types';
 
-const admin = FIXTURE_ACCESS[0] as SessionUser;
-const mathsHod = FIXTURE_ACCESS[1] as SessionUser;
+/**
+ * Resolved by email rather than array position — the fixture list grows, and
+ * an index silently picked the wrong actor when it last did.
+ */
+function actor(email: string): SessionUser {
+  const found = FIXTURE_ACCESS.find((a) => a.email === email);
+  if (!found) throw new Error(`No fixture access row for ${email}`);
+  return found as SessionUser;
+}
+
+const admin = actor('coe@sssihl.edu.in');
+const mathsHod = actor('hod.maths@sssihl.edu.in');
 
 const DEPT = 'Physics';
 const VISITING = {

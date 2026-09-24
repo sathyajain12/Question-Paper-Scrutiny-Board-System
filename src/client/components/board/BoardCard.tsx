@@ -12,8 +12,23 @@ import { ErrorState, LoadingState } from '../ui/states';
 import { FacultyPicker } from './FacultyPicker';
 import { SessionPicker } from './SessionPicker';
 
-/** One card per programme, showing whatever the current status calls for. */
-export function BoardCard({ summary }: { summary: BoardSummary }) {
+/**
+ * One card per programme, showing whatever the current status calls for.
+ *
+ * `readOnly` is how an administrator sees the HoD's screen. The controls are
+ * replaced by what they would have produced — the nominated members, the
+ * dates on offer — rather than hidden: the point of the view is to see what
+ * the HoD is looking at, and a blank card answers nothing. They are not
+ * merely disabled either, because the server refuses these actions for an
+ * admin, and a button that always fails is worse than no button.
+ */
+export function BoardCard({
+  summary,
+  readOnly = false,
+}: {
+  summary: BoardSummary;
+  readOnly?: boolean;
+}) {
   const { data, isPending, error } = useBoard(summary.boardId);
   const submit = useSubmitConstitution(summary.boardId);
   const schedule = useConfirmSchedule(summary.boardId);
@@ -25,6 +40,13 @@ export function BoardCard({ summary }: { summary: BoardSummary }) {
           {summary.programme}
         </h3>
         <StatusBadge status={summary.status} />
+        {/* An admin sees every department at once, so the programme name
+            alone is not enough to place the card. */}
+        {readOnly && (
+          <span className="text-xs font-medium text-slate-500">
+            {summary.department}
+          </span>
+        )}
         {data && <CourseDisclosure board={data.board} />}
       </header>
 
@@ -49,17 +71,27 @@ export function BoardCard({ summary }: { summary: BoardSummary }) {
             </div>
           )}
 
-          {(summary.status === 'NotSubmitted' || summary.status === 'Rejected') && (
-            <FacultyPicker
-              faculty={data.faculty}
-              chairpersonName={data.board.chairperson?.name ?? '—'}
-              initialSelection={data.board.members.map((m) => m.email)}
-              submitting={submit.isPending}
-              onSubmit={(facultyEmails) =>
-                submit.mutate({ facultyEmails, version: data.board.version })
-              }
-            />
-          )}
+          {(summary.status === 'NotSubmitted' || summary.status === 'Rejected') &&
+            (readOnly ? (
+              data.board.members.length > 0 ? (
+                <MemberList names={data.board.members.map((m) => m.name)} />
+              ) : (
+                <p className="mt-3 text-sm text-slate-600">
+                  No faculty nominated yet — the Head of Department has not
+                  made a selection.
+                </p>
+              )
+            ) : (
+              <FacultyPicker
+                faculty={data.faculty}
+                chairpersonName={data.board.chairperson?.name ?? '—'}
+                initialSelection={data.board.members.map((m) => m.email)}
+                submitting={submit.isPending}
+                onSubmit={(facultyEmails) =>
+                  submit.mutate({ facultyEmails, version: data.board.version })
+                }
+              />
+            ))}
 
           {/* Only when read-only: while the picker is open it already shows
               the current selection, so chips below it just duplicate it. */}
@@ -79,16 +111,40 @@ export function BoardCard({ summary }: { summary: BoardSummary }) {
             (data.board.availableDates.length > 0 ? (
               <>
                 <hr className="mt-4 border-slate-200" />
-                <p className="mt-4 text-sm font-semibold text-slate-700">
-                  Select your preferred session date(s) and time
-                </p>
-                <SessionPicker
-                  availableDates={data.board.availableDates}
-                  submitting={schedule.isPending}
-                  onConfirm={(dates, time) =>
-                    schedule.mutate({ dates, time, version: data.board.version })
-                  }
-                />
+                {readOnly ? (
+                  <>
+                    <p className="mt-4 text-sm font-semibold text-slate-700">
+                      Dates offered — awaiting the Head of Department’s choice
+                    </p>
+                    <ul className="mt-2 flex flex-wrap gap-2">
+                      {data.board.availableDates.map((d) => (
+                        <li
+                          key={d.date}
+                          className="rounded-md bg-slate-100 px-2.5 py-1 text-sm text-slate-700"
+                        >
+                          {formatDateLong(d.date)}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-4 text-sm font-semibold text-slate-700">
+                      Select your preferred session date(s) and time
+                    </p>
+                    <SessionPicker
+                      availableDates={data.board.availableDates}
+                      submitting={schedule.isPending}
+                      onConfirm={(dates, time) =>
+                        schedule.mutate({
+                          dates,
+                          time,
+                          version: data.board.version,
+                        })
+                      }
+                    />
+                  </>
+                )}
               </>
             ) : (
               <p className="mt-3 text-sm text-slate-600">

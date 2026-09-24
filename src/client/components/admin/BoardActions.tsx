@@ -5,6 +5,7 @@ import {
   useOfferDates,
   useRejectBoard,
   useRequestChanges,
+  useSendAppointmentEmail,
 } from '@/lib/hooks';
 import { Button } from '../ui/Button';
 import { ErrorState } from '../ui/states';
@@ -20,13 +21,48 @@ export function BoardActions({ board }: { board: BoardSummary }) {
     <div className="space-y-2">
       {board.status === 'Submitted' && <ApproveOrReject board={board} />}
       {board.status === 'Approved' && <OfferDates board={board} />}
-      {board.status === 'Locked' && (
-        <Button variant="secondary" disabled title="Appointment emails land in Phase 5">
-          Send appointment email
-        </Button>
-      )}
+      {board.status === 'Locked' && <AppointmentEmail board={board} />}
 
       <RequestChanges board={board} />
+    </div>
+  );
+}
+
+/**
+ * The appointment letter to the chairperson and members.
+ *
+ * Re-sending is allowed — a member added late, or a bounced address, both
+ * mean the office needs to send it again — so the button stays live and the
+ * result line reports what happened rather than latching to "done".
+ */
+function AppointmentEmail({ board }: { board: BoardSummary }) {
+  const send = useSendAppointmentEmail(board.boardId);
+  const result = send.data;
+
+  return (
+    <div className="space-y-2">
+      {send.error && <ErrorState error={send.error} />}
+
+      <Button
+        variant="secondary"
+        loading={send.isPending}
+        onClick={() => send.mutate()}
+      >
+        {result?.sent ? 'Re-send appointment email' : 'Send appointment email'}
+      </Button>
+
+      {result && (
+        <p
+          className={`text-xs ${result.sent ? 'text-emerald-700' : 'text-amber-600'}`}
+        >
+          {result.message}
+          {result.sent && result.recipients.length > 0 && (
+            <span className="block text-slate-500">
+              {result.recipients.join(', ')}
+            </span>
+          )}
+        </p>
+      )}
     </div>
   );
 }

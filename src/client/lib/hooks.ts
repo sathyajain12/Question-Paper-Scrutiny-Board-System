@@ -39,10 +39,16 @@ export interface FacultyOverridesResponse {
   effective: FacultyMember[];
 }
 
+/**
+ * The current session, or `null` when nobody is signed in.
+ *
+ * `null` is a real answer here, not an error — it is what the app renders the
+ * sign-in screen from. Only a genuine failure (network, 500) rejects.
+ */
 export function useSession() {
   return useQuery({
     queryKey: queryKeys.me,
-    queryFn: () => api.get<SessionUser>('/me'),
+    queryFn: () => api.getSession<SessionUser>('/me'),
     staleTime: Infinity,
     retry: false,
   });
@@ -242,4 +248,25 @@ export const useAcknowledgeChanges = (boardId: string) =>
 /** Admin: close the board after the QPSB session — revokes Drive access. Irreversible. */
 export const useCloseBoard = (boardId: string) =>
   useBoardMutation<{ version: number }>(boardId, 'close');
+
+/**
+ * Admin: send the appointment letter to the chairperson and members.
+ *
+ * Changes no board state, so nothing is invalidated. It resolves with
+ * `sent: false` and a reason rather than throwing when the mail could not go
+ * out — in development that is the normal path, and it is information, not an
+ * error.
+ */
+export interface AppointmentEmailResult {
+  sent: boolean;
+  recipients: string[];
+  message: string;
+}
+
+export function useSendAppointmentEmail(boardId: string) {
+  return useMutation({
+    mutationFn: () =>
+      api.post<AppointmentEmailResult>(`/boards/${boardId}/appointment-email`),
+  });
+}
 
