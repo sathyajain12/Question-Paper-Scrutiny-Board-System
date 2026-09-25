@@ -208,6 +208,46 @@ export const FIXTURE_BOARDS: BoardDetail[] = [
     closed: false,
     version: 8,
   },
+  {
+    /**
+     * A finished board, already closed.
+     *
+     * Present so the archive download is reachable without first performing
+     * a close — which matters on a deployed fixtures build, where the
+     * in-memory mutation may not survive to the next request (the state is
+     * per-isolate). It also keeps the Locked board above genuinely locked,
+     * so the overdue-files flag still has something to flag.
+     */
+    boardId: 'ba-economics-2026',
+    degree: 'Bachelor of Arts',
+    degreeShort: 'B.A.',
+    department: 'Economics',
+    programme: 'B.A. Economics',
+    status: 'Locked',
+    courseCount: 3,
+    courses: [
+      { courseCode: 'ECO301', courseTitle: 'Microeconomic Theory', semester: 'I', driveFolderId: 'fld-eco301' },
+      { courseCode: 'ECO302', courseTitle: 'Macroeconomic Theory', semester: 'I', driveFolderId: 'fld-eco302' },
+      { courseCode: 'ECO303', courseTitle: 'Econometrics', semester: 'II', driveFolderId: 'fld-eco303' },
+    ],
+    chairperson: facultyByEmail('chem3@sssihl.edu.in'),
+    members: [facultyByEmail('math4@sssihl.edu.in')],
+    availableDates: [
+      { date: '2026-08-18', isSelected: true },
+      { date: '2026-08-20', isSelected: false },
+    ],
+    sessionTime: '10:00 AM',
+    submittedBy: 'chem3@sssihl.edu.in',
+    submittedAt: '2026-07-20T07:10:00Z',
+    actionBy: 'coe@sssihl.edu.in',
+    actionAt: '2026-07-22T09:15:00Z',
+    rejectionReason: null,
+    changesRequested: false,
+    // Files confirmed, then closed — the complete, finished path.
+    filesCompleteAt: '2026-08-19T11:05:00Z',
+    closed: true,
+    version: 11,
+  },
 ];
 
 /**

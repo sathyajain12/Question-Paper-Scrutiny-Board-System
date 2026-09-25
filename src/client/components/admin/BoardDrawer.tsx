@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CalendarCheck, X } from 'lucide-react';
+import { CalendarCheck, Download, X } from 'lucide-react';
 import type { BoardSummary } from '@shared/types';
 import { formatDateLong } from '@/lib/format';
 import { useBoard } from '@/lib/hooks';
@@ -180,6 +180,33 @@ export function BoardDrawer({
                     {scheduled.map((d) => formatDateLong(d.date)).join(' · ')}
                     {detail.sessionTime && ` at ${detail.sessionTime}`}
                   </p>
+                </div>
+              )}
+
+              {detail.closed && (
+                <div className="rounded-md bg-slate-100 px-4 py-3 ring-1 ring-slate-200">
+                  <p className="text-sm font-semibold text-slate-800">
+                    Board closed
+                  </p>
+                  <p className="mt-0.5 text-sm text-slate-600">
+                    Drive access has been withdrawn. The office copy is
+                    available here.
+                  </p>
+
+                  {/*
+                    A plain link, not a fetch: the response is a stream the
+                    browser should hand straight to the download manager.
+                    Pulling it through JavaScript would buffer the whole
+                    archive in the tab to rebuild what the browser already
+                    does natively.
+                  */}
+                  <a
+                    href={`/api/downloads/qpsb?boardId=${encodeURIComponent(board.boardId)}`}
+                    className="mt-3 inline-flex items-center gap-2 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+                  >
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                    Download board folder (.zip)
+                  </a>
                 </div>
               )}
 

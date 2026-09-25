@@ -8,6 +8,7 @@
 import type { CheckResult, CourseCheckRow, FolderCheck } from '@shared/types';
 import { foldersFor, type CheckType } from '@shared/constants/folder-spec';
 import type { DriveRepo } from './drive-types';
+import { createZipStream, type ZipEntry } from '../lib/zip';
 import { FIXTURE_BOARDS } from './fixtures';
 
 /** Small stable hash so results don't shuffle between requests. */
@@ -64,8 +65,55 @@ export function createMockDriveRepo(): DriveRepo {
       };
     },
 
-    async streamArchive(): Promise<ReadableStream<Uint8Array>> {
-      throw new Error('Archive download not implemented — Phase 5');
+    /**
+     * A real ZIP of stand-in documents, not real PDFs.
+     *
+     * The archive's *shape* is what matters here — one folder per course,
+     * the post-QPSB subfolders, a manifest at the root — so the download
+     * path, the streaming, and the file naming can all be exercised before
+     * Drive is wired up. Each entry says plainly that it is sample content,
+     * so an archive from a fixtures deployment can never be mistaken for a
+     * real board's papers.
+     */
+    async streamArchive(boardId: string): Promise<ReadableStream<Uint8Array>> {
+      const board = FIXTURE_BOARDS.find((b) => b.boardId === boardId);
+      if (!board) throw new Error(`Board not found: ${boardId}`);
+
+      const encode = (text: string) => new TextEncoder().encode(text);
+
+      async function* entries(): AsyncGenerator<ZipEntry> {
+        yield {
+          name: 'MANIFEST.txt',
+          data: encode(
+            [
+              `QPSB archive — ${board!.programme}`,
+              `Department: ${board!.department}`,
+              `Board: ${board!.boardId}`,
+              `Generated: ${new Date().toISOString()}`,
+              '',
+              'SAMPLE DATA — this archive was produced by a deployment running',
+              'on fixtures. It contains no real question papers.',
+              '',
+              `Courses (${board!.courses.length}):`,
+              ...board!.courses.map((c) => `  ${c.courseCode}  ${c.courseTitle}`),
+            ].join('\n'),
+          ),
+        };
+
+        for (const course of board!.courses) {
+          for (const doc of ['Word Master', 'PDF Master', 'Final Synopsis']) {
+            yield {
+              name: `${course.courseCode}/${doc}/${course.courseCode} — ${doc}.txt`,
+              data: encode(
+                `Sample stand-in for ${course.courseCode} (${course.courseTitle}).\n` +
+                  `${doc} would be the real document here.\n`,
+              ),
+            };
+          }
+        }
+      }
+
+      return createZipStream(entries());
     },
   };
 }

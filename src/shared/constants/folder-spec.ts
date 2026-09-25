@@ -21,11 +21,19 @@ export interface FolderSpec {
   required: boolean;
 }
 
-/** Tab 2 — Pre-QPSB check. */
+/**
+ * Tab 2 — Pre-QPSB check.
+ *
+ * Syllabus, QP Pattern and Model QP were dropped on request. They were
+ * always the odd ones out here: reference material the department supplies
+ * once, not a per-course deliverable, which is why the Apps Script portal
+ * counted every file in them rather than matching on course code. Showing
+ * them in a per-course matrix invited the reading that each course was
+ * missing its own copy.
+ *
+ * Their Drive folders are untouched — this only removes them from the check.
+ */
 export const PRE_QPSB_FOLDERS: FolderSpec[] = [
-  { key: 'syllabus', folderName: '1) Syllabus', label: 'Syllabus', required: false },
-  { key: 'qpPattern', folderName: '2) QP - Pattern', label: 'QP Pattern', required: false },
-  { key: 'modelQp', folderName: '3) Model QP', label: 'Model QP', required: false },
   { key: 'rawQp', folderName: '4) Raw QP', label: 'Raw QP', required: true },
   { key: 'rawSynopsis', folderName: '5) Raw Synopsis', label: 'Raw Synopsis', required: true },
   { key: 'formattedQp', folderName: '6) Formatted QP', label: 'Formatted QP', required: true },
